@@ -82,6 +82,7 @@ drawRegions <- function(
   )
 
   if (label) {
+
     # function to determine label sizes for each individual cell
     # based on cell dimension and label character length
     cex = sqrt(unlist(result$a)) * 0.01 / nchar(names)  %>%
@@ -92,6 +93,7 @@ drawRegions <- function(
       default = "native",
       gp = gpar(cex = cex, col = label.col)
     )
+
   }
 }
 
@@ -124,8 +126,10 @@ draw_sector <- function(
     level = level,
     custom_color = custom_color
   )
+
 }
 
+# function to draw labels for voronoi treemap
 # function to draw labels for voronoi treemap
 draw_label_voronoi <- function(
   cells,
@@ -133,51 +137,36 @@ draw_label_voronoi <- function(
   label_size,
   label_color,
   label_autoscale,
-  label_ratio_size = NULL,  # 割合のフォントサイズ（新たに追加）
-  label_ratio_color = NULL  # 割合の色（新たに追加）
+  ratio_labels = NULL # 追加: 比率ラベルのリスト
 ) {
-  # デフォルト値の設定
-  if (is.null(label_ratio_size)) {
-    label_ratio_size <- label_size * 0.8  # 割合のフォントサイズをクラスタ名の80%に
-  }
-  if (is.null(label_ratio_color)) {
-    label_ratio_color <- adjustcolor(label_color, alpha.f = 0.7)  # 透明度を追加
-  }
 
   for (tm_slot in rev(cells)) {
+
     if (tm_slot$level %in% label_level) {
-      # ラベルサイズの計算（クラスタ名用）
+
+      # determine label sizes for each individual cell
+      # based on cell dimension and label character length
       if (label_autoscale) {
         label_cex <- sqrt(tm_slot$area) / (100 * nchar(tm_slot$name)) %>% round(1)
       } else {
         label_cex <- 0.5
       }
 
-      # クラスタ名用のフォントサイズと色
+      # additionally scale labels size and color from supplied options
       if (length(label_size) == 1) {
         label_cex <- label_cex * label_size
       } else {
         label_cex <- label_cex * label_size[which(label_level %in% tm_slot$level)]
       }
+
+      # determine label color
       if (length(label_color) == 1) {
         label_col <- label_color
       } else {
         label_col <- label_color[which(label_level %in% tm_slot$level)]
       }
 
-      # 割合用のフォントサイズと色
-      if (length(label_ratio_size) == 1) {
-        ratio_cex <- label_cex * label_ratio_size
-      } else {
-        ratio_cex <- label_cex * label_ratio_size[which(label_level %in% tm_slot$level)]
-      }
-      if (length(label_ratio_color) == 1) {
-        ratio_col <- label_ratio_color
-      } else {
-        ratio_col <- label_ratio_color[which(label_level %in% tm_slot$level)]
-      }
-
-      # クラスタ名を描画（1行目）
+      # draw labels
       grid::grid.text(
         tm_slot$name,
         tm_slot$site[1],
@@ -186,23 +175,21 @@ draw_label_voronoi <- function(
         gp = gpar(cex = label_cex, col = label_col)
       )
 
-      # 割合を描画（2行目）
-      # 割合が NA でない場合のみ描画
-      if (!is.na(tm_slot$ratio)) {
-        ratio_text <- sprintf("%.1f%%", tm_slot$ratio)
-        # 2行目のY座標を調整（1行目の下に配置）
-        y_offset <- -label_cex * 0.5  # フォントサイズに応じて調整
-        grid::grid.text(
-          ratio_text,
-          tm_slot$site[1],
-          tm_slot$site[2] + y_offset,
-          default = "native",
-          gp = gpar(cex = ratio_cex, col = ratio_col)
-        )
+      # 比率ラベルの描画 (追加)
+      if (!is.null(ratio_labels) && !is.na(ratio_labels[[tm_slot$name]])) {
+          grid::grid.text(
+            ratio_labels[[tm_slot$name]],  # 比率ラベル
+            tm_slot$site[1],
+            tm_slot$site[2] - (label_cex * 30), # メインラベルの下に配置。調整可能
+            default = "native",
+            gp = gpar(cex = label_cex * 0.7, col = label_col) # 少し小さめのフォント
+          )
       }
+
     }
   }
 }
+
 
 # function to draw labels for sunburst treemap
 draw_label_sunburst <- function(
@@ -214,7 +201,9 @@ draw_label_sunburst <- function(
 ) {
 
   lapply(cells, function(tm_slot) {
+
     if (tm_slot$level %in% label_level) {
+
       # determine label size and color from supplied options
       if (length(label_size) > 1) {
         label_cex <- label_size[1]
@@ -267,9 +256,11 @@ draw_label_sunburst <- function(
         default.units = "native",
         gp = gpar(cex = label_cex, col = label_col)
       )
+
     }
   }) %>% invisible
 }
+
 
 # function to add colors to a treemap object
 add_color <- function(treemap, color_palette = NULL,
@@ -303,6 +294,7 @@ add_color <- function(treemap, color_palette = NULL,
   # CASE 3: CUSTOM COLOR
   # 'custom_color' to use a color index supplied during treemap generation
   if (color_type == "custom_color") {
+
     # determine number of required colors
     color_list <- lapply(treemap@cells, function(tm_slot) {
         if (tm_slot$level %in% color_level) tm_slot$custom_color
@@ -368,4 +360,5 @@ add_color <- function(treemap, color_palette = NULL,
   # return treemap with colors and palette
   treemap@call$palette <- pal
   treemap
+
 }

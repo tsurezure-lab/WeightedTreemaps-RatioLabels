@@ -129,7 +129,7 @@ draw_sector <- function(
 
 }
 
-# function to draw labels for voronoi treemap
+# drawUtils.R の draw_label_voronoi 関数を修正
 draw_label_voronoi <- function(
   cells,
   label_level,
@@ -137,53 +137,45 @@ draw_label_voronoi <- function(
   label_color,
   label_autoscale
 ) {
-
   for (tm_slot in rev(cells)) {
-
     if (tm_slot$level %in% label_level) {
-
-      # determine label sizes for each individual cell
+      # ラベルサイズの決定
       if (label_autoscale) {
         label_cex <- sqrt(tm_slot$area) / (100 * nchar(tm_slot$name)) %>% round(1)
       } else {
         label_cex <- 0.5
       }
 
-      # additionally scale labels size and color from supplied options
       if (length(label_size) == 1) {
         label_cex <- label_cex * label_size
       } else {
         label_cex <- label_cex * label_size[which(label_level %in% tm_slot$level)]
       }
 
-      # determine label color
+      # ラベル色の決定
       if (length(label_color) == 1) {
         label_col <- label_color
       } else {
         label_col <- label_color[which(label_level %in% tm_slot$level)]
       }
 
-      # calculate percentage (構成比)
-      total_area <- tm_slot$parent_area  # 親の総面積（後述の修正で追加）
-      percentage <- (tm_slot$area / total_area) * 100
-      percentage_text <- sprintf("%.1f%%", percentage)
+      # 構成比を追加したラベルテキスト（2行表示）
+      label_text <- paste0(tm_slot$name, "\n", sprintf("%.1f%%", tm_slot$ratio))
 
-      # draw labels (2 lines: name and percentage)
+      # ラベルの描画（2行表示を考慮して位置を調整）
       grid::grid.text(
-        paste(tm_slot$name, percentage_text, sep = "\n"),
+        label_text,
         tm_slot$site[1],
         tm_slot$site[2],
         default = "native",
-        gp = grid::gpar(cex = label_cex, col = label_col)
+        gp = gpar(cex = label_cex, col = label_col, lineheight = 0.8)  # 行間を調整
       )
-
     }
   }
-
 }
 
 
-# function to draw labels for sunburst treemap
+# drawUtils.R の draw_label_sunburst 関数を修正
 draw_label_sunburst <- function(
   cells,
   label_level,
@@ -191,12 +183,9 @@ draw_label_sunburst <- function(
   label_color,
   diameter
 ) {
-
   lapply(cells, function(tm_slot) {
-
     if (tm_slot$level %in% label_level) {
-
-      # determine label size and color from supplied options
+      # ラベルサイズと色の決定（既存のコード）
       if (length(label_size) > 1) {
         label_cex <- label_size[1]
         warning("'label_size' should only have length 1. Using first argument.")
@@ -211,49 +200,45 @@ draw_label_sunburst <- function(
         label_col <- label_color
       }
 
-      # compute_sector from lower and upper bounds and diameter arguments
+      # セクターの角度計算（既存のコード）
       segment <- c(tm_slot$lower_bound, tm_slot$upper_bound) * 2 * pi
       z <- seq(segment[1], segment[2], by = pi/400)
       if (diameter * cos(stats::median(z)) >= 0) side = 1 else side = -1
       sinz <- sin(median(z))
       cosz <- cos(median(z))
-      d1 <- diameter+0.02
-      d2 <- diameter+0.05
-      d3 <- diameter+0.10
+      d1 <- diameter + 0.02
+      d2 <- diameter + 0.05
+      d3 <- diameter + 0.10
 
-      # calculate percentage (構成比)
-      total_area <- tm_slot$parent_area  # 親の総面積（後述の修正で追加）
-      percentage <- (tm_slot$area / total_area) * 100
-      percentage_text <- sprintf("%.1f%%", percentage)
+      # 構成比を追加したラベルテキスト（2行表示）
+      label_text <- paste0(substr(tm_slot$name, 1, 18), "\n", sprintf("%.1f%%", tm_slot$ratio))
 
-      # draw label arcs
+      # ラベル用の円弧と線の描画（既存のコード）
       z <- z[-c(1, length(z))]
       grid::grid.lines(
-        (c(d1 * cos(z[1]), d2 * cos(z), d1 * cos(tail(z, 1)))+1)*1000,
-        (c(d1 * sin(z[1]), d2 * sin(z), d1 * sin(tail(z, 1)))+1)*1000,
+        (c(d1 * cos(z[1]), d2 * cos(z), d1 * cos(tail(z, 1))) + 1) * 1000,
+        (c(d1 * sin(z[1]), d2 * sin(z), d1 * sin(tail(z, 1))) + 1) * 1000,
         default.units = "native",
         gp = gpar(lwd = label_cex, col = label_col)
       )
 
-      # draw label lines
       grid::grid.lines(
-        x = (c(d2 * cosz, d2 * cosz + 0.15 * cosz * abs(sinz), d3 * side)+1)*1000,
+        x = (c(d2 * cosz, d2 * cosz + 0.15 * cosz * abs(sinz), d3 * side) + 1) * 1000,
         y = (c(d2 * sinz, d2 * sinz + 0.15 * sinz * abs(sinz),
-          d2 * sinz + 0.15 * sinz * abs(sinz))+1)*1000,
+               d2 * sinz + 0.15 * sinz * abs(sinz)) + 1) * 1000,
         default.units = "native",
         gp = gpar(lwd = label_cex, col = label_col)
       )
 
-      # draw label text (2 lines: name and percentage)
+      # ラベルの描画（2行表示を考慮）
       grid::grid.text(
-        label = paste(substr(tm_slot$name, 1, 18), percentage_text, sep = "\n"),
-        x = ((d3+0.02) * side+1)*1000,
-        y = ((d2 * sinz + 0.15 * sinz * abs(sinz))+1)*1000,
+        label = label_text,
+        x = ((d3 + 0.02) * side + 1) * 1000,
+        y = ((d2 * sinz + 0.15 * sinz * abs(sinz)) + 1) * 1000,
         just = ifelse(side == 1, "left", "right"),
         default.units = "native",
-        gp = gpar(cex = label_cex, col = label_col)
+        gp = gpar(cex = label_cex, col = label_col, lineheight = 0.8)  # 行間を調整
       )
-
     }
   }) %>% invisible
 }

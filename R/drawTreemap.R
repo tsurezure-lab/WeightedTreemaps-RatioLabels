@@ -47,13 +47,6 @@
 #' @param label_color (character) A single character indicating color for cell labels.
 #'   Alternatively a vector of \code{length(label_level)}, then each label
 #'   is drawn with the specified color.
-#' @param label_ratio_size (numeric) A single number indicating relative size of the ratio label
-#'   (second line) in relation to its parent cell. Alternatively a numeric vector of
-#'   \code{length(label_level)} that specifies relative size of ratio labels for each level
-#'   individually. Default is \code{label_size * 0.8}.
-#' @param label_ratio_color (character) A single character indicating color for ratio labels.
-#'   Alternatively a vector of \code{length(label_level)}, then each ratio label
-#'   is drawn with the specified color. Default is \code{label_color} with transparency.
 #' @param label_autoscale (logical) Whether to automatically scale labels based on
 #'   their estimated width. Default is TRUE.
 #' @param title (character) An optional title, default to \code{NULL}.
@@ -95,33 +88,51 @@
 #' df <- data.frame(
 #'   A = rep(c("abcd", "efgh"), each = 4),
 #'   B = letters[1:8],
-#'   size = c(37, 52, 58, 27, 49, 44, 34, 45),
-#'   primary_cluster_ratio = c(0.1, 0.15, 0.2, 0.05, 0.12, 0.13, 0.15, 0.1),
-#'   secondary_cluster_ratio = c(0.2, 0.25, 0.3, 0.15, 0.22, 0.23, 0.25, 0.2)
+#'   size = c(37, 52, 58, 27, 49, 44, 34, 45)
 #' )
 #'
 #' # compute treemap
 #' tm <- voronoiTreemap(
 #'   data = df,
-#'   levels = c("B", "A"),
+#'   levels = c("B"),
 #'   cell_size = "size",
 #'   shape = "circle",
 #'   positioning = "regular",
 #'   seed = 123
 #' )
 #'
-#' # plot treemap with each cell colored by name (default) and display ratio
-#' drawTreemap(tm, label_size = 1, color_type = "categorical",
-#'             label_ratio_size = 0.8, label_ratio_color = grey(0.7))
+#' # plot treemap with each cell colored by name (default)
+#' drawTreemap(tm, label_size = 1, color_type = "categorical")
 #'
-#' # plot treemap with each cell colored by name, but larger cells lighter and smaller cells darker
-#' drawTreemap(tm, label_size = 1, color_type = "both",
-#'             label_ratio_size = 0.8, label_ratio_color = grey(0.7))
+#' # plot treemap with each cell colored by name, but larger cells
+#' # lighter and smaller cells darker
+#' drawTreemap(tm, label_size = 1, color_type = "both")
 #'
 #' # plot treemap with different color palette and style
 #' drawTreemap(tm, label_size = 1, label_color = grey(0.3),
-#'             border_color = grey(0.3), color_palette = heat.colors(6),
-#'             label_ratio_size = 0.8, label_ratio_color = grey(0.7))
+#'             border_color = grey(0.3), color_palette = heat.colors(6)
+#' )
+#'
+#' # ---------------------------------------------
+#'
+#' # load example data
+#' data(mtcars)
+#' mtcars$car_name = gsub(" ", "\n", row.names(mtcars))
+#'
+#' # generate sunburst treemap
+#' tm <- sunburstTreemap(
+#'   data = mtcars,
+#'   levels = c("gear", "cyl"),
+#'   cell_size = "hp"
+#' )
+#'
+#' # draw treemap
+#' drawTreemap(tm,
+#'   title = "A sunburst treemap",
+#'   legend = TRUE,
+#'   border_size = 2,
+#'   label_color = grey(0.6)
+#' )
 #'
 #' @importFrom dplyr %>%
 #' @importFrom grid grid.newpage
@@ -143,6 +154,7 @@
 #' @importFrom utils tail
 #'
 #' @export drawTreemap
+#'
 drawTreemap <- function(
   treemap,
   levels = 1:length(treemap@call$levels),
@@ -156,8 +168,6 @@ drawTreemap <- function(
   label_level = max(levels),
   label_size = 1,
   label_color = grey(0.9),
-  label_ratio_size = NULL,  # 割合のフォントサイズ（新たに追加）
-  label_ratio_color = NULL,  # 割合の色（新たに追加）
   label_autoscale = TRUE,
   title = NULL,
   title_size = 1,
@@ -170,15 +180,16 @@ drawTreemap <- function(
   height = 0.9,
   layout = c(1, 1),
   position = c(1, 1),
-  add = FALSE
-) {
+  add = FALSE)
+{
+
   # validate input data and parameters
   validate_treemap(treemap,
-    width, height, layout, position, add,
-    levels, color_level, border_level,
-    label_level, color_palette,
-    border_color, label_color,
-    custom_range, title)
+  width, height, layout, position, add,
+  levels, color_level, border_level,
+  label_level, color_palette,
+  border_color, label_color,
+  custom_range, title)
 
   # determine color levels based on treemap type
   if (is.null(color_level)) {
@@ -193,6 +204,7 @@ drawTreemap <- function(
   if (!add) {
     grid::grid.newpage()
   }
+
 
   # generate main grid viewport
   # optionally subdividing the plot area by layout argument
@@ -267,14 +279,18 @@ drawTreemap <- function(
     }
   }) %>% invisible
 
+
   # DRAWING BORDERS
   if (!is.null(border_color) & !is.null(border_size)) {
+
     # draw only borders for the correct level
     lapply(treemap@cells, function(tm_slot) {
       if (tm_slot$level %in% border_level) {
+
         # determine border size and color from supplied options;
         # if single value is supplied for border size
         if (length(border_size) == 1) {
+
           # differentiate between voronoi treemap where we want decreasing
           # lwd of borders with decreasing level, and sunburst treemap where
           # we want the same size
@@ -283,6 +299,8 @@ drawTreemap <- function(
           } else {
             border_lwd <- border_size / tm_slot$level
           }
+
+          # or use different sizes for each level
         } else {
           border_lwd <- border_size[tm_slot$level]
         }
@@ -295,11 +313,12 @@ drawTreemap <- function(
 
         drawPoly(tm_slot$poly, tm_slot$name,
           fill = NA, lwd = border_lwd, col = border_col)
+
       }
     }) %>% invisible
+
   }
 
-# ... (drawTreemap 関数の既存のコード) ...
 
   # DRAWING LABELS
   if (
@@ -322,7 +341,7 @@ drawTreemap <- function(
       }
 
     } else {
-      # 比率ラベルの準備 (追加)
+      # 比率ラベルの準備 (修正)
       ratio_labels <- list()
       if(all(c("primary_cluster_name", "secondary_cluster_name",
                "primary_cluster_ratio", "secondary_cluster_ratio") %in% colnames(treemap@data))){
@@ -330,10 +349,21 @@ drawTreemap <- function(
           level <- treemap@cells[[cell_name]]$level
           if(level == 1){
             ratio <- treemap@data$secondary_cluster_ratio[treemap@data$secondary_cluster_name == cell_name]
-            ratio_labels[[cell_name]] <- paste0(round(ratio, 1), "%")
+            # 一致するものがない場合は NA を明示的に代入
+            if(length(ratio) == 0) {
+              ratio_labels[[cell_name]] <- NA_character_
+            } else {
+              ratio_labels[[cell_name]] <- paste0(round(ratio, 1), "%")
+            }
+
           } else if (level == 2){
             ratio <- treemap@data$primary_cluster_ratio[treemap@data$primary_cluster_name == cell_name]
-             ratio_labels[[cell_name]] <- paste0(round(ratio, 1), "%")
+            # 一致するものがない場合は NA を明示的に代入
+            if(length(ratio) == 0){
+              ratio_labels[[cell_name]] <- NA_character_
+            } else {
+              ratio_labels[[cell_name]] <- paste0(round(ratio, 1), "%")
+            }
           }
         }
       }
@@ -346,10 +376,11 @@ drawTreemap <- function(
 
   }
 
-# ... (drawTreemap 関数の既存のコード) ...
+
 
   # DRAW OPTIONAL TITLE
   if (!is.null(title)) {
+
     # pop viewport back to parent
     grid::popViewport()
 
@@ -367,10 +398,12 @@ drawTreemap <- function(
       y = 0.5,
       gp = grid::gpar(cex = title_size, col = title_color)
     )
+
   }
 
   # DRAW OPTIONAL LEGEND
   if (legend) {
+
     # pop viewport back to parent
     grid::popViewport()
 
@@ -401,9 +434,11 @@ drawTreemap <- function(
     grid.draw(
       lattice::draw.colorkey(key = colorkey)
     )
+
   }
 
   # Finally pop the viewport back to the parent viewport
   # in order to allow adding more plots
   popViewport(3)
+
 }

@@ -178,7 +178,7 @@ draw_label_voronoi <- function(
 
 }
 
-# 新しい関数 draw_label_voronoi_modified を追加
+# 新しい関数 draw_label_voronoi_modified を追加 (drawUtils.R 内)
 #' @keywords internal
 draw_label_voronoi_modified <- function(
   tm_cells,
@@ -213,9 +213,9 @@ draw_label_voronoi_modified <- function(
       current_col <- label_col[which(label_level == tm_slot$level)]
 
       # 変更箇所：ここから
-      # calculate percentage
-      total_size <- sum(sapply(treemap@cells, function(x) x$size))
-      percentage <- round(tm_slot$size / total_size * 100, 2)
+      # calculate percentage using area instead of size
+      total_size <- sum(sapply(treemap@cells, function(x) x$area))
+      percentage <- round(tm_slot$area / total_size * 100, 2)
       # create label with name and percentage
       label_text <- paste0(tm_slot$name, "\n(", percentage, "%)")
       # 変更箇所：ここまで

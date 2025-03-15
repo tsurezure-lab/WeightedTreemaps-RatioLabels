@@ -127,97 +127,51 @@ draw_sector <- function(
 }
 
 # draw_label_voronoi 関数（Voronoiツリーマップ用のラベル描画）
-draw_label_voronoi <- function(cells, levels, size, color, autoscale, label_ratio_format = "%.1f%%", fontfamily = "sans") {
-  grid::grid.newpage()
-  grid::pushViewport(viewport(xscale = c(0, 2000), yscale = c(0, 2000)))
-
-  lapply(cells, function(tm_slot) {
-    cat("Processing cell:", tm_slot$name, "Level:", tm_slot$level, "\n")
-    if (tm_slot$level %in% levels) {
-      cat("Drawing label for:", tm_slot$name, "Level:", tm_slot$level, "\n")
-      level_idx <- which(levels == tm_slot$level)
-      label_size <- if (length(size) > 1) size[level_idx] else size
-      label_color <- if (length(color) > 1) color[level_idx] else color
-
-      # ポリゴンデータの存在確認
-      if (is.null(tm_slot$poly) || !inherits(tm_slot$poly, "sfg")) {
-        warning("Invalid polygon data for cell: ", tm_slot$name)
-        return(NULL)
-      }
-
-      # サイトデータの存在確認
-      if (is.null(tm_slot$site) || length(tm_slot$site) < 2) {
-        warning("Invalid site data for cell: ", tm_slot$name)
-        return(NULL)
-      }
-
-      # ラベル名
+draw_label_voronoi <- function(
+  cells,
+  label_level,
+  label_size,
+  label_color,
+  label_autoscale,
+  label_ratio_format = "%.1f%%",
+  fontfamily = "sans"
+) {
+  for (tm_slot in rev(cells)) {
+    if (tm_slot$level %in% label_level) {
+      # ラベル名と構成比
       label <- tm_slot$name
       if (!is.null(label_ratio_format) && !is.null(tm_slot$ratio) && !is.na(tm_slot$ratio)) {
         ratio_text <- sprintf(label_ratio_format, tm_slot$ratio * 100)
         label <- paste(label, ratio_text, sep = "\n")
       }
 
-      # 重心計算
-      if (inherits(tm_slot$poly, "sfg")) {
-        coords <- sf::st_coordinates(tm_slot$poly)[, c("X", "Y")]
-        centroid <- c(mean(coords[, "X"]), mean(coords[, "Y"]))
+      # ラベルサイズの計算
+      if (label_autoscale) {
+        label_cex <- sqrt(tm_slot$area) / (100 * nchar(tm_slot$name)) %>% round(1)
       } else {
-        centroid <- tm_slot$site
+        label_cex <- 0.5
       }
-      x <- centroid[1] / 2000
-      y <- centroid[2] / 2000
-
-      # オートスケーリング
-      if (autoscale) {
-        # to_coords を使用して座標を抽出
-        poly_coords <- to_coords(tm_slot$poly)
-        if (length(poly_coords$x) > 1) {
-          width <- (max(poly_coords$x) - min(poly_coords$x)) / 2000
-          height <- (max(poly_coords$y) - min(poly_coords$y)) / 2000
-          char_width <- 0.05
-          char_height <- 0.08
-          label_aspect_ratio <- nchar(label) * char_width / (2 * char_height)
-          cell_aspect_ratio <- width / height
-
-          label_size <- min(
-            width / (nchar(label) * char_width),
-            height / (2 * char_height),
-            max_font_size / 300
-          ) * label_size
-
-          cat("Cell:", tm_slot$name, "Width:", width, "Height:", height, "Label Size:", label_size, "\n")
-        } else {
-          warning("Insufficient polygon data for autoscale in cell: ", tm_slot$name)
-          label_size <- min(max(label_size, 1), 10)
-        }
+      if (length(label_size) == 1) {
+        label_cex <- label_cex * label_size
       } else {
-        label_size <- min(max(label_size, 1), 10)
+        label_cex <- label_cex * label_size[which(label_level %in% tm_slot$level)]
+      }
+      if (length(label_color) == 1) {
+        label_col <- label_color
+      } else {
+        label_col <- label_color[which(label_level %in% tm_slot$level)]
       }
 
-      cat("Label drawn for:", tm_slot$name, "at (", x, ",", y, ") with size", label_size, "\n")
-
-      # ラベルの描画
+      # ラベル描画（フォントファミリーを適用）
       grid::grid.text(
         label,
-        x = unit(x, "npc"),
-        y = unit(y, "npc"),
-        just = "center",
-        hjust = 0.5,
-        vjust = 0.5,
-        gp = grid::gpar(
-          fontsize = label_size * 300,
-          col = label_color,
-          fontfamily = fontfamily,
-          lineheight = 0.8
-        )
+        tm_slot$site[1],
+        tm_slot$site[2],
+        default = "native",
+        gp = grid::gpar(cex = label_cex, col = label_col, fontfamily = fontfamily)
       )
-    } else {
-      cat("Skipping cell:", tm_slot$name, "Level:", tm_slot$level, "not in", levels, "\n")
     }
-  }) %>% invisible
-
-  grid::popViewport()
+  }
 }
 
 # draw_label_sunburst 関数（Sunburstツリーマップ用のラベル描画）

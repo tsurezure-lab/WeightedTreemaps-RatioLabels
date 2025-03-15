@@ -84,7 +84,7 @@ drawRegions <- function(
   if (label) {
     # function to determine label sizes for each individual cell
     # based on cell dimension and label character length
-    cex = sqrt(unlist(result$a)) * 0.01 / nchar(names) %>%
+    cex = sqrt(unlist(result$a)) * 0.01 / nchar(names)  %>%
       round(1)
     grid::grid.text(names,
       sites$x,
@@ -126,31 +126,34 @@ draw_sector <- function(
   )
 }
 
-# draw_label_voronoi 関数（Voronoiツリーマップ用のラベル描画）
+# function to draw labels for voronoi treemap
 draw_label_voronoi <- function(
   cells,
   label_level,
   label_size,
   label_color,
   label_autoscale,
-  label_ratio_format = "%.1f%%",
-  fontfamily = "sans"
+  label_ratio_size = NULL,  # 割合のフォントサイズ（新たに追加）
+  label_ratio_color = NULL  # 割合の色（新たに追加）
 ) {
+  # デフォルト値の設定
+  if (is.null(label_ratio_size)) {
+    label_ratio_size <- label_size * 0.8  # 割合のフォントサイズをクラスタ名の80%に
+  }
+  if (is.null(label_ratio_color)) {
+    label_ratio_color <- label_color  # デフォルトではクラスタ名と同じ色
+  }
+
   for (tm_slot in rev(cells)) {
     if (tm_slot$level %in% label_level) {
-      # ラベル名と構成比
-      label <- tm_slot$name
-      if (!is.null(label_ratio_format) && !is.null(tm_slot$ratio) && !is.na(tm_slot$ratio)) {
-        ratio_text <- sprintf(label_ratio_format, tm_slot$ratio * 100)
-        label <- paste(label, ratio_text, sep = "\n")
-      }
-
-      # ラベルサイズの計算
+      # ラベルサイズの計算（クラスタ名用）
       if (label_autoscale) {
         label_cex <- sqrt(tm_slot$area) / (100 * nchar(tm_slot$name)) %>% round(1)
       } else {
         label_cex <- 0.5
       }
+
+      # クラスタ名用のフォントサイズと色
       if (length(label_size) == 1) {
         label_cex <- label_cex * label_size
       } else {
@@ -162,31 +165,57 @@ draw_label_voronoi <- function(
         label_col <- label_color[which(label_level %in% tm_slot$level)]
       }
 
-      # ラベル描画（フォントファミリーを適用）
+      # 割合用のフォントサイズと色
+      if (length(label_ratio_size) == 1) {
+        ratio_cex <- label_cex * label_ratio_size
+      } else {
+        ratio_cex <- label_cex * label_ratio_size[which(label_level %in% tm_slot$level)]
+      }
+      if (length(label_ratio_color) == 1) {
+        ratio_col <- label_ratio_color
+      } else {
+        ratio_col <- label_ratio_color[which(label_level %in% tm_slot$level)]
+      }
+
+      # クラスタ名を描画（1行目）
       grid::grid.text(
-        label,
+        tm_slot$name,
         tm_slot$site[1],
         tm_slot$site[2],
         default = "native",
-        gp = grid::gpar(cex = label_cex, col = label_col, fontfamily = fontfamily)
+        gp = gpar(cex = label_cex, col = label_col)
       )
+
+      # 割合を描画（2行目）
+      # 割合が NA でない場合のみ描画
+      if (!is.na(tm_slot$ratio)) {
+        ratio_text <- sprintf("%.2f%%", tm_slot$ratio)
+        # 2行目のY座標を調整（1行目の下に配置）
+        y_offset <- -label_cex * 0.5  # フォントサイズに応じて調整
+        grid::grid.text(
+          ratio_text,
+          tm_slot$site[1],
+          tm_slot$site[2] + y_offset,
+          default = "native",
+          gp = gpar(cex = ratio_cex, col = ratio_col)
+        )
+      }
     }
   }
 }
 
-# draw_label_sunburst 関数（Sunburstツリーマップ用のラベル描画）
+# function to draw labels for sunburst treemap
 draw_label_sunburst <- function(
   cells,
   label_level,
   label_size,
   label_color,
-  diameter,
-  label_ratio_format = "%.1f%%",
-  fontfamily = "zenmaru"
+  diameter
 ) {
+
   lapply(cells, function(tm_slot) {
     if (tm_slot$level %in% label_level) {
-      # ラベルサイズと色の決定
+      # determine label size and color from supplied options
       if (length(label_size) > 1) {
         label_cex <- label_size[1]
         warning("'label_size' should only have length 1. Using first argument.")
@@ -201,53 +230,42 @@ draw_label_sunburst <- function(
         label_col <- label_color
       }
 
-      # セクターの角度計算
+      # compute_sector from lower and upper bounds and diameter arguments
       segment <- c(tm_slot$lower_bound, tm_slot$upper_bound) * 2 * pi
       z <- seq(segment[1], segment[2], by = pi/400)
       if (diameter * cos(stats::median(z)) >= 0) side = 1 else side = -1
-      sinz <- sin(stats::median(z))
-      cosz <- cos(stats::median(z))
-      d1 <- diameter + 0.02
-      d2 <- diameter + 0.05
-      d3 <- diameter + 0.10
+      sinz <- sin(median(z))
+      cosz <- cos(median(z))
+      d1 <- diameter+0.02
+      d2 <- diameter+0.05
+      d3 <- diameter+0.10
 
-      # ラベルテキスト（クラスター名と構成比を2行表示）
-      label_text <- tm_slot$name
-      if (!is.null(label_ratio_format) && !is.null(tm_slot$ratio) && !is.na(tm_slot$ratio)) {
-        ratio_text <- sprintf(label_ratio_format, tm_slot$ratio * 100)  # パーセントに変換
-        label_text <- paste(substr(label_text, 1, 18), ratio_text, sep = "\n")  # 2行表示、名前を18文字に制限
-      }
-
-      # ラベル用の円弧と線の描画
+      # draw label arcs
       z <- z[-c(1, length(z))]
       grid::grid.lines(
-        (c(d1 * cos(z[1]), d2 * cos(z), d1 * cos(tail(z, 1))) + 1) * 1000,
-        (c(d1 * sin(z[1]), d2 * sin(z), d1 * sin(tail(z, 1))) + 1) * 1000,
+        (c(d1 * cos(z[1]), d2 * cos(z), d1 * cos(tail(z, 1)))+1)*1000,
+        (c(d1 * sin(z[1]), d2 * sin(z), d1 * sin(tail(z, 1)))+1)*1000,
         default.units = "native",
         gp = gpar(lwd = label_cex, col = label_col)
       )
 
+      # draw label lines
       grid::grid.lines(
-        x = (c(d2 * cosz, d2 * cosz + 0.15 * cosz * abs(sinz), d3 * side) + 1) * 1000,
+        x = (c(d2 * cosz, d2 * cosz + 0.15 * cosz * abs(sinz), d3 * side)+1)*1000,
         y = (c(d2 * sinz, d2 * sinz + 0.15 * sinz * abs(sinz),
-               d2 * sinz + 0.15 * sinz * abs(sinz)) + 1) * 1000,
+          d2 * sinz + 0.15 * sinz * abs(sinz))+1)*1000,
         default.units = "native",
         gp = gpar(lwd = label_cex, col = label_col)
       )
 
-      # ラベルの描画（2行表示を考慮）
+      #draw label text
       grid::grid.text(
-        label = label_text,
-        x = ((d3 + 0.02) * side + 1) * 1000,
-        y = ((d2 * sinz + 0.15 * sinz * abs(sinz)) + 1) * 1000,
+        label = substr(tm_slot$name, 1, 18),
+        x = ((d3+0.02) * side+1)*1000,
+        y = ((d2 * sinz + 0.15 * sinz * abs(sinz))+1)*1000,
         just = ifelse(side == 1, "left", "right"),
         default.units = "native",
-        gp = gpar(
-          cex = label_cex,
-          col = label_col,
-          fontfamily = fontfamily,
-          lineheight = 0.8  # 2行表示時の行間調整
-        )
+        gp = gpar(cex = label_cex, col = label_col)
       )
     }
   }) %>% invisible
@@ -270,32 +288,30 @@ add_color <- function(treemap, color_palette = NULL,
   }
 
   # CASE 2: CELL AREA
-  # determine total area per level
-  level_areas <- list()
-  for (lvl in 1:length(treemap@call$levels)) {
-    total_area <- lapply(treemap@cells, function(tm_slot) {
-      if (tm_slot$level == lvl) tm_slot$area
-    }) %>% unlist %>% sum
-    level_areas[[lvl]] <- total_area
-  }
-  treemap@call$level_areas <- level_areas  # レベルごとの総面積を保存
-
+  # determine total area
+  total_area <- lapply(treemap@cells, function(tm_slot) {
+    if (tm_slot$level %in% color_level) tm_slot$area
+  }) %>% unlist %>% sum
   # determine number of required colors
   if (color_type == "cell_size") {
     cell_sizes <- lapply(treemap@cells, function(tm_slot) {
-      if (tm_slot$level %in% color_level) tm_slot$area / level_areas[[tm_slot$level]]
+      if (tm_slot$level %in% color_level) tm_slot$area/total_area
     }) %>% unlist
     color_list <- cell_sizes %>% pretty(n = color_steps)
   }
 
   # CASE 3: CUSTOM COLOR
+  # 'custom_color' to use a color index supplied during treemap generation
   if (color_type == "custom_color") {
+    # determine number of required colors
     color_list <- lapply(treemap@cells, function(tm_slot) {
         if (tm_slot$level %in% color_level) tm_slot$custom_color
       }) %>% unlist %>% pretty(n = 10)
   }
 
   # DEFINE PALETTE
+  # generate palette with defined number of colors
+  # use a custom data range if supplied by user (does not work for categorical)
   if (!is.null(custom_range) & !(color_type %in% c("categorical", "both"))) {
     color_list <- custom_range %>% pretty(n = 10)
   }
@@ -312,7 +328,7 @@ add_color <- function(treemap, color_palette = NULL,
       if (color_type %in% c("categorical", "both")) {
         tm_slot$color <- pal[[tm_slot$name]]
       } else if (color_type == "cell_size") {
-        area <- tm_slot$area / level_areas[[tm_slot$level]]
+        area <- tm_slot$area/total_area
         tm_slot$color <- pal[[findInterval(area, as.numeric(names(pal)))]]
       } else if (color_type == "custom_color") {
         if (tm_slot$custom_color < as.numeric(names(pal))[[1]]) {
@@ -327,17 +343,22 @@ add_color <- function(treemap, color_palette = NULL,
 
   # SPECIAL CASE "BOTH": DARKEN OR LIGHTEN LOWEST CELL LEVEL
   if (color_type == "both") {
+    # get range of cell areas for lowest level
     cell_area <- lapply(treemap@cells, function(tm_slot) {
       if (tm_slot$level == length(treemap@call$levels)) tm_slot$area
     }) %>% unlist
+    # based on that, calculate individual lightness adjustment per cell
     treemap@cells <- lapply(treemap@cells, function(tm_slot) {
+      # only adjust lightness for cells of lowest level
       if (tm_slot$level == length(treemap@call$levels)) {
-        area <- tm_slot$area / level_areas[[tm_slot$level]]
-        corr_factor <- scales::rescale(area, from = range(cell_area / level_areas[[tm_slot$level]]), to = c(-0.2, 0.2))
+        area <- tm_slot$area/total_area
+        corr_factor <- scales::rescale(area, from = range(cell_area/total_area), to = c(-0.2, 0.2))
+        # if lowest level is also chosen color_level, adjust lightness of cell
         if (tm_slot$level %in% color_level) {
           tm_slot$color <- colorspace::lighten(tm_slot$color, corr_factor)
+        # else add a semitransparant color to the cell (parental cell is main color)
         } else {
-          tm_slot$color <- grey(0.5 + (2 * corr_factor), alpha = (1.5 * abs(corr_factor)))
+          tm_slot$color <- grey(0.5+(2*corr_factor), alpha = (1.5*abs(corr_factor)))
         }
       }
       tm_slot

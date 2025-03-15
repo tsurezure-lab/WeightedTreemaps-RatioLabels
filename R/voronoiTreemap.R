@@ -265,3 +265,247 @@ voronoiTreemap <- function(
 
   return(tm)
 }
+
+#' drawTreemap
+#'
+#' Draw a nested additively weighted Voronoi treemap.
+#'
+#' @param x (voronoiResult) An object of class `voronoiResult` as returned by `voronoiTreemap`.
+#' @param label_level (numeric) Vector of levels to be labelled. Default is `1`.
+#' @param label_size (numeric) Size of labels. Default is `3`.
+#' @param label_color (character) Color of labels. Default is `"black"`.
+#' @param label_autoscale (logical) Should label size be scaled by cell area? Default is `TRUE`.
+#' @param label_ratio_size (numeric) Size of ratio labels (relative to `label_size`). Default is `NULL` (0.75 times `label_size`).
+#' @param label_ratio_color (character) Color of ratio labels. Default is `NULL` (same as `label_color` but with transparency).
+#' @param legend (logical) Should a legend be drawn? Default is `TRUE`.
+#' @param title (character) Title of the treemap. Default is `""`.
+#' @param color_type (character) Type of coloring: "categorical" or "continuous". Default is `"categorical"`.
+#' @param color_level (numeric) Level to color by. Default is `1`.
+#' @param border_size (numeric) Size of cell borders. Default is `1`.
+#' @param border_color (character) Color of cell borders. Default is `"black"`.
+#' @param palette (character) Color palette for categorical coloring. Default is `NULL` (uses `RColorBrewer`).
+#'
+#' @export drawTreemap
+drawTreemap <- function(
+  x,
+  label_level = 1,
+  label_size = 3,
+  label_color = "black",
+  label_autoscale = TRUE,
+  label_ratio_size = NULL,
+  label_ratio_color = NULL,
+  legend = TRUE,
+  title = "",
+  color_type = "categorical",
+  color_level = 1,
+  border_size = 1,
+  border_color = "black",
+  palette = NULL
+) {
+  if (!inherits(x, "voronoiResult")) {
+    stop("x must be an object of class 'voronoiResult'")
+  }
+
+  # Set default label_ratio_size and label_ratio_color if not provided
+  if (is.null(label_ratio_size)) {
+    label_ratio_size <- label_size * 0.75  # クラスタ名の0.75倍
+  }
+  if (is.null(label_ratio_color)) {
+    label_ratio_color <- adjustcolor(label_color, alpha.f = 0.7)  # 透明度を追加
+  }
+
+  # Prepare colors
+  if (color_type == "categorical") {
+    if (is.null(palette)) {
+      palette <- RColorBrewer::brewer.pal(12, "Set3")[1:length(unique(sapply(x@cells, function(cell) cell$custom_color)))]
+    }
+    colors <- sapply(x@cells, function(cell) {
+      if (cell$level == color_level) {
+        if (!is.na(cell$custom_color)) {
+          palette[which(unique(sapply(x@cells, function(c) c$custom_color)) %in% cell$custom_color)[1]]
+        } else {
+          "grey"
+        }
+      } else {
+        adjustcolor("grey", alpha.f = 0.2)
+      }
+    })
+  } else if (color_type == "continuous") {
+    colors <- sapply(x@cells, function(cell) {
+      if (cell$level == color_level) {
+        if (!is.na(cell$custom_color)) {
+          scales::rescale(cell$custom_color, to = c(0, 1))
+        } else {
+          0.5
+        }
+      } else {
+        adjustcolor("grey", alpha.f = 0.2)
+      }
+    })
+    colors <- colorRampPalette(c("blue", "red"))(100)[round(colors * 100)]
+  }
+
+  # Draw polygons
+  grid::grid.newpage()
+  for (i in seq_along(x@cells)) {
+    cell <- x@cells[[i]]
+    poly <- cell$poly[[1]]
+    grid::grid.polygon(
+      x = poly[, 1],
+      y = poly[, 2],
+      default.units = "native",
+      gp = grid::gpar(
+        fill = colors[i],
+        col = border_color,
+        lwd = border_size
+      )
+    )
+  }
+
+  # Draw labels
+  draw_label_voronoi(
+    x@cells,
+    label_level = label_level,
+    label_size = label_size,
+    label_color = label_color,
+    label_autoscale = label_autoscale,
+    label_ratio_size = label_ratio_size,
+    label_ratio_color = label_ratio_color
+  )
+
+  # Draw title
+  if (nchar(title) > 0) {
+    grid::grid.text(
+      title,
+      x = 0.5,
+      y = 0.95,
+      gp = grid::gpar(fontsize = 18)
+    )
+  }
+
+  # Draw legend (if requested)
+  if (legend && color_type == "categorical") {
+    unique_colors <- unique(colors[!is.na(colors) & colors != "grey"])
+    unique_names <- unique(sapply(x@cells[colors %in% unique_colors], function(cell) cell$name))
+    n <- length(unique_colors)
+    x_pos <- seq(0.05, 0.95, length.out = n + 1)[-c(1, n + 1)]
+    for (i in seq_along(unique_colors)) {
+      grid::grid.rect(
+        x = x_pos[i],
+        y = 0.05,
+        width = 0.05,
+        height = 0.05,
+        gp = grid::gpar(fill = unique_colors[i], col = border_color)
+      )
+      grid::grid.text(
+        unique_names[i],
+        x = x_pos[i] + 0.03,
+        y = 0.025,
+        just = "left",
+        gp = grid::gpar(fontsize = 8)
+      )
+    }
+  }
+}
+
+#' draw_label_voronoi
+#'
+#' Draw labels for Voronoi treemap cells.
+#'
+#' @param cells (list) List of cell objects from a `voronoiResult`.
+#' @param label_level (numeric) Vector of levels to be labelled.
+#' @param label_size (numeric) Size of labels.
+#' @param label_color (character) Color of labels.
+#' @param label_autoscale (logical) Should label size be scaled by cell area?
+#' @param label_ratio_size (numeric) Size of ratio labels (relative to `label_size`).
+#' @param label_ratio_color (character) Color of ratio labels.
+#'
+#' @importFrom grid grid.text
+draw_label_voronoi <- function(
+  cells,
+  label_level,
+  label_size,
+  label_color,
+  label_autoscale,
+  label_ratio_size = NULL,
+  label_ratio_color = NULL
+) {
+  if (is.null(label_ratio_size)) {
+    label_ratio_size <- label_size * 0.75  # クラスタ名の0.75倍
+  }
+  if (is.null(label_ratio_color)) {
+    label_ratio_color <- label_color
+  }
+
+  for (tm_slot in rev(cells)) {
+    if (tm_slot$level %in% label_level) {
+      if (label_autoscale) {
+        label_cex <- sqrt(tm_slot$area) / (100 * nchar(tm_slot$name)) %>% round(1)
+      } else {
+        label_cex <- 0.5
+      }
+
+      if (length(label_size) == 1) {
+        label_cex <- label_cex * label_size
+      } else {
+        label_cex <- label_cex * label_size[which(label_level %in% tm_slot$level)]
+      }
+      if (length(label_color) == 1) {
+        label_col <- label_color
+      } else {
+        label_col <- label_color[which(label_level %in% tm_slot$level)]
+      }
+
+      if (length(label_ratio_size) == 1) {
+        ratio_cex <- label_cex * label_ratio_size
+      } else {
+        ratio_cex <- label_cex * label_ratio_size[which(label_level %in% tm_slot$level)]
+      }
+      if (length(label_ratio_color) == 1) {
+        ratio_col <- label_ratio_color
+      } else {
+        ratio_col <- label_ratio_color[which(label_level %in% tm_slot$level)]
+      }
+
+      # クラスタ名を描画（1行目）
+      grid::grid.text(
+        tm_slot$name,
+        tm_slot$site[1],
+        tm_slot$site[2],
+        default = "native",
+        gp = gpar(cex = label_cex, col = label_col)
+      )
+
+      # 構成比ラベルを描画（2行目）
+      if (!is.na(tm_slot$ratio)) {
+        ratio_text <- sprintf("%.1f%%", tm_slot$ratio)
+        y_offset <- -label_cex * 0.5  # フォントサイズに応じたオフセット
+        grid::grid.text(
+          ratio_text,
+          tm_slot$site[1],
+          tm_slot$site[2] + y_offset,
+          default = "native",
+          gp = gpar(cex = ratio_cex, col = ratio_col)
+        )
+      }
+    }
+  }
+}
+
+#' @importFrom Rcpp evalCpp
+#' @importFrom grid grid.newpage
+#' @importFrom grid pushViewport
+#' @importFrom grid viewport
+#' @importFrom dplyr %>%
+#' @importFrom dplyr mutate_if
+#' @importFrom dplyr group_by
+#' @importFrom dplyr summarise
+#' @importFrom dplyr count
+#' @importFrom tibble deframe
+#' @importFrom scales rescale
+#' @importFrom sf st_polygon
+#' @importFrom sf st_area
+#' @importFrom sp Polygon
+#' @importFrom sp spsample
+#'
+#' @useDynLib WeightedTreemaps, .registration = TRUE

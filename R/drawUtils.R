@@ -217,22 +217,35 @@ draw_label_voronoi_modified <- function(
       # create label with name and percentage
       label_text <- paste0(tm_slot$name, "\n(", percentage, "%)")
 
+      # --- ここからデバッグ用のコードを追加 ---
+      print("--- Debugging tm_slot ---")
+      print(paste("tm_slot$name:", tm_slot$name))
+      print(paste("tm_slot$level:", tm_slot$level))
+      print(paste("label_level:", paste(label_level, collapse = ", "))) #label_levelの内容を確認
+      print(paste("label_text:", label_text)) # 作成されたラベル
+      print(paste("current_cex (before scaling):", current_cex)) # スケーリング前のサイズ
+
+      if(is.null(tm_slot$poly$x) || length(tm_slot$poly$x) == 0){
+        print("tm_slot$poly$x is NULL or empty")
+      }
+      if(is.null(tm_slot$poly$y) || length(tm_slot$poly$y) == 0){
+         print("tm_slot$poly$y is NULL or empty")
+      }
+      # --- ここまでデバッグ用のコード ---
+
       # determine font size
       if (label_autoscale) {
         # estimate width of the label
         label_width <- strwidth(label_text, units = "inches", cex = 1)
         # convert polygon width in inches (2000 units correspond to the treemap width/height)
-        # 警告とゼロ除算を抑制するための修正: ここから
         poly_width <- (max(tm_slot$poly$x) - min(tm_slot$poly$x)) * (par("pin")[1] / 2000)
-        if (poly_width <= .Machine$double.eps) { # poly_widthが非常に小さい、または0の場合
-          current_cex <- current_cex * 0.8 # label_widthによるスケーリングをしない
-        } else {
-          current_cex <- current_cex * 0.8 * poly_width / label_width # 通常のスケーリング
-        }
-        # 警告とゼロ除算を抑制するための修正: ここまで
+        # scale label
+        current_cex <- current_cex * 0.8 * poly_width / label_width
       }
+      print(paste("current_cex (after scaling):", current_cex)) # スケーリング後のサイズ
 
       # draw text to polygon
+       print("--- Drawing label ---") # grid.text 呼び出し前に print
       grid::grid.text(
         label_text,
         x = unit(mean(range(tm_slot$poly$x)), "native"),

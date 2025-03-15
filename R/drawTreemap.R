@@ -53,7 +53,7 @@
 #'   individually. Default is \code{label_size * 0.8}.
 #' @param label_ratio_color (character) A single character indicating color for ratio labels.
 #'   Alternatively a vector of \code{length(label_level)}, then each ratio label
-#'   is drawn with the specified color. Default is \code{label_color}.
+#'   is drawn with the specified color. Default is \code{label_color} with transparency.
 #' @param label_autoscale (logical) Whether to automatically scale labels based on
 #'   their estimated width. Default is TRUE.
 #' @param title (character) An optional title, default to \code{NULL}.
@@ -317,6 +317,14 @@ drawTreemap <- function(
         )
       }
     } else {
+      # Set default label_ratio_size and label_ratio_color if not provided
+      if (is.null(label_ratio_size)) {
+        label_ratio_size <- label_size * 0.8  # クラスタ名の0.8倍（既存のデフォルトに合わせる）
+      }
+      if (is.null(label_ratio_color)) {
+        label_ratio_color <- adjustcolor(label_color, alpha.f = 0.7)  # 透明度を追加
+      }
+
       draw_label_voronoi(
         treemap@cells, label_level, label_size, label_color, label_autoscale,
         label_ratio_size, label_ratio_color

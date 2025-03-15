@@ -53,6 +53,7 @@
 #'   in labels, using \code{sprintf} syntax. For example, "%.1f%%" displays ratios
 #'   as percentages with one decimal place. Default is "%.1f%%". Set to NULL to
 #'   disable ratio display.
+#' @param fontfamily (character) The font family to use for labels. Default is "sans".
 #' @param title (character) An optional title, default to \code{NULL}.
 #' @param title_size (numeric) The size (or 'character expansion') of the title.
 #' @param title_color (character) Color for title.
@@ -92,7 +93,8 @@
 #' df <- data.frame(
 #'   A = rep(c("abcd", "efgh"), each = 4),
 #'   B = letters[1:8],
-#'   size = c(37, 52, 58, 27, 49, 44, 34, 45)
+#'   size = c(37, 52, 58, 27, 49, 44, 34, 45),
+#'   ratio = c(0.1, 0.15, 0.2, 0.05, 0.12, 0.13, 0.15, 0.1)  # 例としてratioを追加
 #' )
 #'
 #' # compute treemap
@@ -105,16 +107,17 @@
 #'   seed = 123
 #' )
 #'
-#' # plot treemap with each cell colored by name (default)
-#' drawTreemap(tm, label_size = 1, color_type = "categorical")
+#' # plot treemap with each cell colored by name (default) and display ratio
+#' drawTreemap(tm, label_size = 1, color_type = "categorical", label_ratio_format = "%.1f%%")
 #'
 #' # plot treemap with each cell colored by name, but larger cells
 #' # lighter and smaller cells darker
-#' drawTreemap(tm, label_size = 1, color_type = "both")
+#' drawTreemap(tm, label_size = 1, color_type = "both", label_ratio_format = "%.1f%%")
 #'
 #' # plot treemap with different color palette and style
 #' drawTreemap(tm, label_size = 1, label_color = grey(0.3),
-#'             border_color = grey(0.3), color_palette = heat.colors(6)
+#'             border_color = grey(0.3), color_palette = heat.colors(6),
+#'             label_ratio_format = "%.1f%%"
 #' )
 #'
 #' # ---------------------------------------------
@@ -135,7 +138,8 @@
 #'   title = "A sunburst treemap",
 #'   legend = TRUE,
 #'   border_size = 2,
-#'   label_color = grey(0.6)
+#'   label_color = grey(0.6),
+#'   label_ratio_format = "%.1f%%"
 #' )
 #'
 #' @importFrom dplyr %>%
@@ -173,7 +177,8 @@ drawTreemap <- function(
   label_size = 1,
   label_color = grey(0.9),
   label_autoscale = TRUE,
-  label_ratio_format = "%.1f%%",  # 新しい引数を追加
+  label_ratio_format = "%.1f%%",  # 構成比表示用の引数（デフォルトはパーセント）
+  fontfamily = "sans",  # フォントファミリー用の引数を追加
   title = NULL,
   title_size = 1,
   title_color = grey(0.5),
@@ -303,13 +308,15 @@ drawTreemap <- function(
         draw_label_sunburst(
           treemap@cells, label_level, label_size, label_color,
           treemap@call$diameter_outer,
-          label_ratio_format = label_ratio_format  # 構成比表示用の引数
+          label_ratio_format = label_ratio_format,
+          fontfamily = fontfamily  # フォントファミリーを渡す
         )
       }
     } else {
       draw_label_voronoi(
         treemap@cells, label_level, label_size, label_color, label_autoscale,
-        label_ratio_format = label_ratio_format  # 構成比表示用の引数
+        label_ratio_format = label_ratio_format,
+        fontfamily = fontfamily  # フォントファミリーを渡す
       )
     }
   }

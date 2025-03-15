@@ -143,7 +143,6 @@ draw_label_voronoi <- function(
     if (tm_slot$level %in% label_level) {
 
       # determine label sizes for each individual cell
-      # based on cell dimension and label character length
       if (label_autoscale) {
         label_cex <- sqrt(tm_slot$area) / (100 * nchar(tm_slot$name)) %>% round(1)
       } else {
@@ -164,13 +163,18 @@ draw_label_voronoi <- function(
         label_col <- label_color[which(label_level %in% tm_slot$level)]
       }
 
-      # draw labels
+      # calculate percentage (構成比)
+      total_area <- tm_slot$parent_area  # 親の総面積（後述の修正で追加）
+      percentage <- (tm_slot$area / total_area) * 100
+      percentage_text <- sprintf("%.1f%%", percentage)
+
+      # draw labels (2 lines: name and percentage)
       grid::grid.text(
-        tm_slot$name,
+        paste(tm_slot$name, percentage_text, sep = "\n"),
         tm_slot$site[1],
         tm_slot$site[2],
         default = "native",
-        gp = gpar(cex = label_cex, col = label_col)
+        gp = grid::gpar(cex = label_cex, col = label_col)
       )
 
     }
@@ -178,86 +182,6 @@ draw_label_voronoi <- function(
 
 }
 
-# 新しい関数 draw_label_voronoi_modified を追加 (drawUtils.R 内)
-#' @keywords internal
-draw_label_voronoi_modified <- function(
-    tm_cells,
-    label_level,
-    label_size,
-    label_color,
-    label_autoscale,
-    treemap # treemap オブジェクト全体を渡す
-) {
-
-  # determine label size from supplied options
-  if (length(label_size) > 1) {
-    label_cex <- label_size
-  } else {
-    label_cex <- rep(label_size, length(label_level))
-  }
-
-  # determine label color from supplied options
-  if (length(label_color) > 1) {
-    label_col <- label_color
-  } else {
-    label_col <- rep(label_color, length(label_level))
-  }
-
-  # draw only labels for the correct level
-  lapply(tm_cells, function(tm_slot) {
-    if (tm_slot$level %in% label_level) {
-
-      # get the size and color for current level
-      current_cex <- label_cex[which(label_level == tm_slot$level)]
-      current_col <- label_col[which(label_level == tm_slot$level)]
-
-      # calculate percentage using area instead of size
-      total_size <- sum(sapply(treemap@cells, function(x) x$area))
-      percentage <- round(tm_slot$area / total_size * 100, 2)
-      # create label with name and percentage
-      label_text <- paste0(tm_slot$name, "\n(", percentage, "%)")
-
-      # --- ここからデバッグ用のコードを追加 ---
-      print("--- Debugging tm_slot ---")
-      print(paste("tm_slot$name:", tm_slot$name))
-      print(paste("tm_slot$level:", tm_slot$level))
-      print(paste("label_level:", paste(label_level, collapse = ", "))) #label_levelの内容を確認
-      print(paste("label_text:", label_text)) # 作成されたラベル
-      print(paste("current_cex (before scaling):", current_cex)) # スケーリング前のサイズ
-
-      if(is.null(tm_slot$poly$x) || length(tm_slot$poly$x) == 0){
-        print("tm_slot$poly$x is NULL or empty")
-      }
-      if(is.null(tm_slot$poly$y) || length(tm_slot$poly$y) == 0){
-         print("tm_slot$poly$y is NULL or empty")
-      }
-      # --- ここまでデバッグ用のコード ---
-
-      # determine font size
-      if (label_autoscale) {
-        # estimate width of the label
-        label_width <- strwidth(label_text, units = "inches", cex = 1)
-        # convert polygon width in inches (2000 units correspond to the treemap width/height)
-        poly_width <- (max(tm_slot$poly$x) - min(tm_slot$poly$x)) * (par("pin")[1] / 2000)
-        # scale label
-        current_cex <- current_cex * 0.8 * poly_width / label_width
-      }
-      print(paste("current_cex (after scaling):", current_cex)) # スケーリング後のサイズ
-
-      # draw text to polygon
-       print("--- Drawing label ---") # grid.text 呼び出し前に print
-      grid::grid.text(
-        label_text,
-        x = unit(mean(range(tm_slot$poly$x)), "native"),
-        y = unit(mean(range(tm_slot$poly$y)), "native"),
-        gp = gpar(cex = current_cex, col = current_col)
-      )
-
-    }
-  }) %>% invisible
-
-}
-                           
 
 # function to draw labels for sunburst treemap
 draw_label_sunburst <- function(
@@ -297,6 +221,11 @@ draw_label_sunburst <- function(
       d2 <- diameter+0.05
       d3 <- diameter+0.10
 
+      # calculate percentage (構成比)
+      total_area <- tm_slot$parent_area  # 親の総面積（後述の修正で追加）
+      percentage <- (tm_slot$area / total_area) * 100
+      percentage_text <- sprintf("%.1f%%", percentage)
+
       # draw label arcs
       z <- z[-c(1, length(z))]
       grid::grid.lines(
@@ -315,9 +244,9 @@ draw_label_sunburst <- function(
         gp = gpar(lwd = label_cex, col = label_col)
       )
 
-      #draw label text
+      # draw label text (2 lines: name and percentage)
       grid::grid.text(
-        label = substr(tm_slot$name, 1, 18),
+        label = paste(substr(tm_slot$name, 1, 18), percentage_text, sep = "\n"),
         x = ((d3+0.02) * side+1)*1000,
         y = ((d2 * sinz + 0.15 * sinz * abs(sinz))+1)*1000,
         just = ifelse(side == 1, "left", "right"),
@@ -347,31 +276,32 @@ add_color <- function(treemap, color_palette = NULL,
   }
 
   # CASE 2: CELL AREA
-  # determine total area
-  total_area <- lapply(treemap@cells, function(tm_slot) {
-    if (tm_slot$level %in% color_level) tm_slot$area
-  }) %>% unlist %>% sum
+  # determine total area per level
+  level_areas <- list()
+  for (lvl in 1:length(treemap@call$levels)) {
+    total_area <- lapply(treemap@cells, function(tm_slot) {
+      if (tm_slot$level == lvl) tm_slot$area
+    }) %>% unlist %>% sum
+    level_areas[[lvl]] <- total_area
+  }
+  treemap@call$level_areas <- level_areas  # レベルごとの総面積を保存
+
   # determine number of required colors
   if (color_type == "cell_size") {
     cell_sizes <- lapply(treemap@cells, function(tm_slot) {
-      if (tm_slot$level %in% color_level) tm_slot$area/total_area
+      if (tm_slot$level %in% color_level) tm_slot$area / level_areas[[tm_slot$level]]
     }) %>% unlist
     color_list <- cell_sizes %>% pretty(n = color_steps)
   }
 
   # CASE 3: CUSTOM COLOR
-  # 'custom_color' to use a color index supplied during treemap generation
   if (color_type == "custom_color") {
-
-    # determine number of required colors
     color_list <- lapply(treemap@cells, function(tm_slot) {
         if (tm_slot$level %in% color_level) tm_slot$custom_color
       }) %>% unlist %>% pretty(n = 10)
   }
 
   # DEFINE PALETTE
-  # generate palette with defined number of colors
-  # use a custom data range if supplied by user (does not work for categorical)
   if (!is.null(custom_range) & !(color_type %in% c("categorical", "both"))) {
     color_list <- custom_range %>% pretty(n = 10)
   }
@@ -388,7 +318,7 @@ add_color <- function(treemap, color_palette = NULL,
       if (color_type %in% c("categorical", "both")) {
         tm_slot$color <- pal[[tm_slot$name]]
       } else if (color_type == "cell_size") {
-        area <- tm_slot$area/total_area
+        area <- tm_slot$area / level_areas[[tm_slot$level]]
         tm_slot$color <- pal[[findInterval(area, as.numeric(names(pal)))]]
       } else if (color_type == "custom_color") {
         if (tm_slot$custom_color < as.numeric(names(pal))[[1]]) {
@@ -403,22 +333,17 @@ add_color <- function(treemap, color_palette = NULL,
 
   # SPECIAL CASE "BOTH": DARKEN OR LIGHTEN LOWEST CELL LEVEL
   if (color_type == "both") {
-    # get range of cell areas for lowest level
     cell_area <- lapply(treemap@cells, function(tm_slot) {
       if (tm_slot$level == length(treemap@call$levels)) tm_slot$area
     }) %>% unlist
-    # based on that, calculate individual lightness adjustment per cell
     treemap@cells <- lapply(treemap@cells, function(tm_slot) {
-      # only adjust lightness for cells of lowest level
       if (tm_slot$level == length(treemap@call$levels)) {
-        area <- tm_slot$area/total_area
-        corr_factor <- scales::rescale(area, from = range(cell_area/total_area), to = c(-0.2, 0.2))
-        # if lowest level is also chosen color_level, adjust lightness of cell
+        area <- tm_slot$area / level_areas[[tm_slot$level]]
+        corr_factor <- scales::rescale(area, from = range(cell_area / level_areas[[tm_slot$level]]), to = c(-0.2, 0.2))
         if (tm_slot$level %in% color_level) {
           tm_slot$color <- colorspace::lighten(tm_slot$color, corr_factor)
-        # else add a semitransparant color to the cell (parental cell is main color)
         } else {
-          tm_slot$color <- grey(0.5+(2*corr_factor), alpha = (1.5*abs(corr_factor)))
+          tm_slot$color <- grey(0.5 + (2 * corr_factor), alpha = (1.5 * abs(corr_factor)))
         }
       }
       tm_slot
@@ -428,5 +353,4 @@ add_color <- function(treemap, color_palette = NULL,
   # return treemap with colors and palette
   treemap@call$palette <- pal
   treemap
-
 }

@@ -130,6 +130,7 @@ draw_sector <- function(
 }
 
 # function to draw labels for voronoi treemap
+# function to draw labels for voronoi treemap
 draw_label_voronoi <- function(
   cells,
   label_level,
@@ -176,10 +177,26 @@ draw_label_voronoi <- function(
 
       # 比率ラベルの描画 (修正: NULLチェックに加えてlengthチェックも行う)
       if (!is.null(ratio_labels) && length(ratio_labels[[tm_slot$name]]) > 0 && !is.na(ratio_labels[[tm_slot$name]])) {
+          
+          # デバッグプリント
+          cat("--- Debug: draw_label_voronoi ---\n")
+          cat("Cell Name:", tm_slot$name, "\n")
+          cat("ratio_labels:", ratio_labels[[tm_slot$name]], "\n")
+          cat("tm_slot$site[1]:", tm_slot$site[1], "\n")
+          cat("tm_slot$site[2]:", tm_slot$site[2], "\n")
+          cat("label_cex:", label_cex, "\n")
+
+          # 描画されるラベルの座標を計算
+          x_coord <- tm_slot$site[1]
+          y_coord <- tm_slot$site[2] - (label_cex * 30)
+
+          cat("Calculated x_coord:", x_coord, "\n")
+          cat("Calculated y_coord:", y_coord, "\n")
+
           grid::grid.text(
             ratio_labels[[tm_slot$name]],  # 比率ラベル
-            tm_slot$site[1],
-            tm_slot$site[2] - (label_cex * 30), # メインラベルの下に配置。調整可能
+            x_coord, # X座標
+            y_coord, # Y座標
             default = "native",
             gp = gpar(cex = label_cex * 0.7, col = label_col) # 少し小さめのフォント
           )

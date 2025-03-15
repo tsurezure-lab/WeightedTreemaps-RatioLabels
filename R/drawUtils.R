@@ -127,17 +127,17 @@ draw_sector <- function(
 }
 
 # draw_label_voronoi 関数（Voronoiツリーマップ用のラベル描画）
-draw_label_voronoi <- function(cells, levels, size, color, autoscale, label_ratio_format = "%.1f%%", , fontfamily = "sans") {
+draw_label_voronoi <- function(cells, levels, size, color, autoscale, label_ratio_format = "%.1f%%", fontfamily = "sans") {
   grid::grid.newpage()
   grid::pushViewport(viewport(xscale = c(0, 2000), yscale = c(0, 2000)))
-  
+
   lapply(cells, function(tm_slot) {
     if (tm_slot$level %in% levels) {
       level_idx <- which(levels == tm_slot$level)
       label_size <- if (length(size) > 1) size[level_idx] else size
       label_color <- if (length(color) > 1) color[level_idx] else color
 
-      # ポリゴンデータとサイトデータの存在確認
+      # ポリゴンデータとサイトデータの存在確認 (エラーチェックはそのまま)
       if (is.null(tm_slot$poly) || is.null(tm_slot$poly$x) || length(tm_slot$poly$x) == 0) {
         warning("Invalid polygon data for cell: ", tm_slot$name)
         return(NULL)
@@ -155,17 +155,36 @@ draw_label_voronoi <- function(cells, levels, size, color, autoscale, label_rati
         label <- paste(label, ratio_text, sep = "\n")  # 2行表示
       }
 
-      # ラベルの描画位置（サイトの中心、正規化）
-      centroid <- tm_slot$site
+      # 重心計算 (sf パッケージを使用)
+      if (inherits(tm_slot$poly, "sfg")) {
+          coords <- sf::st_coordinates(tm_slot$poly)[, c("X", "Y")]
+          centroid <- c(mean(coords[, "X"]), mean(coords[, "Y"]))
+      } else {
+          centroid <- tm_slot$site # ポリゴンがsfgオブジェクトでない場合は、siteを使う
+      }
       x <- centroid[1] / 2000  # 0〜1に正規化
       y <- centroid[2] / 2000  # 0〜1に正規化
 
-      # オートスケーリング（簡易調整）
+
+      # オートスケーリング（改善版）
       if (autoscale) {
         if (length(tm_slot$poly$x) > 1) {
           width <- (max(tm_slot$poly$x) - min(tm_slot$poly$x)) / 2000  # 0〜1に正規化
-          cat("Cell:", tm_slot$name, "Width:", width, "\n")
-          label_size <- min(max(label_size * width / (nchar(label) * 0.05), 1), 10)  # サイズ調整
+          height <- (max(tm_slot$poly$y) - min(tm_slot$poly$y)) / 2000 # 0〜1に正規化
+          char_width <- 0.05 # 文字のおおよその幅 (調整可能)
+          char_height <- 0.08 # 文字のおおよその高さ (調整可能)
+          label_aspect_ratio <- nchar(label) * char_width / (2 * char_height) # 2行を考慮
+          cell_aspect_ratio <- width / height
+
+          label_size <- min(
+            width / (nchar(label) * char_width),
+            height / (2 * char_height), # 2行を考慮
+            max_font_size / 300 #上限を設定
+          ) * label_size # もともとのlabel_sizeとかけ合わせる
+
+          cat("Cell:", tm_slot$name, "Width:", width, "Height:", height, "Label Size:", label_size, "\n")
+
+
         } else {
           warning("Insufficient polygon data for autoscale in cell: ", tm_slot$name)
           label_size <- min(max(label_size, 1), 10)  # デフォルトサイズ
@@ -174,14 +193,19 @@ draw_label_voronoi <- function(cells, levels, size, color, autoscale, label_rati
         label_size <- min(max(label_size, 1), 10)  # デフォルトサイズ
       }
 
+
       cat("Label drawn for:", tm_slot$name, "at (", x, ",", y, ") with size", label_size, "\n")
 
+      # ラベルの描画 (just, hjust, vjust を追加)
       grid::grid.text(
         label,
         x = unit(x, "npc"),  # NPC単位を使用
         y = unit(y, "npc"),  # NPC単位を使用
+        just = "center",    # 水平位置揃え
+        hjust = 0.5,       # 水平位置調整 (0:左寄せ, 0.5:中央, 1:右寄せ)
+        vjust = 0.5,       # 垂直位置調整 (0:下寄せ, 0.5:中央, 1:上寄せ)
         gp = grid::gpar(
-          fontsize = label_size,
+          fontsize = label_size * 300 , # fontsizeはpx単位で解釈されるようなので、label_sizeをスケール
           col = label_color,
           fontfamily = fontfamily,
           lineheight = 0.8
@@ -189,7 +213,7 @@ draw_label_voronoi <- function(cells, levels, size, color, autoscale, label_rati
       )
     }
   }) %>% invisible
-  
+
   grid::popViewport()
 }
 

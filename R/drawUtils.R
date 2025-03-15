@@ -132,12 +132,14 @@ draw_label_voronoi <- function(cells, levels, size, color, autoscale, label_rati
   grid::pushViewport(viewport(xscale = c(0, 2000), yscale = c(0, 2000)))
 
   lapply(cells, function(tm_slot) {
+    cat("Processing cell:", tm_slot$name, "Level:", tm_slot$level, "\n")
     if (tm_slot$level %in% levels) {
+      cat("Drawing label for:", tm_slot$name, "Level:", tm_slot$level, "\n")
+      # 以下は既存のコードをそのまま使用
       level_idx <- which(levels == tm_slot$level)
       label_size <- if (length(size) > 1) size[level_idx] else size
       label_color <- if (length(color) > 1) color[level_idx] else color
 
-      # ポリゴンデータとサイトデータの存在確認 (エラーチェックはそのまま)
       if (is.null(tm_slot$poly) || is.null(tm_slot$poly$x) || length(tm_slot$poly$x) == 0) {
         warning("Invalid polygon data for cell: ", tm_slot$name)
         return(NULL)
@@ -147,70 +149,63 @@ draw_label_voronoi <- function(cells, levels, size, color, autoscale, label_rati
         return(NULL)
       }
 
-      # ラベル名
       label <- tm_slot$name
-      # 構成比の追加（ratioが存在する場合）
       if (!is.null(label_ratio_format) && !is.null(tm_slot$ratio) && !is.na(tm_slot$ratio)) {
-        ratio_text <- sprintf(label_ratio_format, tm_slot$ratio * 100)  # パーセントに変換
-        label <- paste(label, ratio_text, sep = "\n")  # 2行表示
+        ratio_text <- sprintf(label_ratio_format, tm_slot$ratio * 100)
+        label <- paste(label, ratio_text, sep = "\n")
       }
 
-      # 重心計算 (sf パッケージを使用)
       if (inherits(tm_slot$poly, "sfg")) {
           coords <- sf::st_coordinates(tm_slot$poly)[, c("X", "Y")]
           centroid <- c(mean(coords[, "X"]), mean(coords[, "Y"]))
       } else {
-          centroid <- tm_slot$site # ポリゴンがsfgオブジェクトでない場合は、siteを使う
+          centroid <- tm_slot$site
       }
-      x <- centroid[1] / 2000  # 0〜1に正規化
-      y <- centroid[2] / 2000  # 0〜1に正規化
+      x <- centroid[1] / 2000
+      y <- centroid[2] / 2000
 
-
-      # オートスケーリング（改善版）
       if (autoscale) {
         if (length(tm_slot$poly$x) > 1) {
-          width <- (max(tm_slot$poly$x) - min(tm_slot$poly$x)) / 2000  # 0〜1に正規化
-          height <- (max(tm_slot$poly$y) - min(tm_slot$poly$y)) / 2000 # 0〜1に正規化
-          char_width <- 0.05 # 文字のおおよその幅 (調整可能)
-          char_height <- 0.08 # 文字のおおよその高さ (調整可能)
-          label_aspect_ratio <- nchar(label) * char_width / (2 * char_height) # 2行を考慮
+          width <- (max(tm_slot$poly$x) - min(tm_slot$poly$x)) / 2000
+          height <- (max(tm_slot$poly$y) - min(tm_slot$poly$y)) / 2000
+          char_width <- 0.05
+          char_height <- 0.08
+          label_aspect_ratio <- nchar(label) * char_width / (2 * char_height)
           cell_aspect_ratio <- width / height
 
           label_size <- min(
             width / (nchar(label) * char_width),
-            height / (2 * char_height), # 2行を考慮
-            max_font_size / 300 #上限を設定
-          ) * label_size # もともとのlabel_sizeとかけ合わせる
+            height / (2 * char_height),
+            max_font_size / 300
+          ) * label_size
 
           cat("Cell:", tm_slot$name, "Width:", width, "Height:", height, "Label Size:", label_size, "\n")
-
-
         } else {
           warning("Insufficient polygon data for autoscale in cell: ", tm_slot$name)
-          label_size <- min(max(label_size, 1), 10)  # デフォルトサイズ
+          label_size <- min(max(label_size, 1), 10)
         }
       } else {
-        label_size <- min(max(label_size, 1), 10)  # デフォルトサイズ
+        label_size <- min(max(label_size, 1), 10)
       }
-
 
       cat("Label drawn for:", tm_slot$name, "at (", x, ",", y, ") with size", label_size, "\n")
 
-      # ラベルの描画 (just, hjust, vjust を追加)
       grid::grid.text(
         label,
-        x = unit(x, "npc"),  # NPC単位を使用
-        y = unit(y, "npc"),  # NPC単位を使用
-        just = "center",    # 水平位置揃え
-        hjust = 0.5,       # 水平位置調整 (0:左寄せ, 0.5:中央, 1:右寄せ)
-        vjust = 0.5,       # 垂直位置調整 (0:下寄せ, 0.5:中央, 1:上寄せ)
+        x = unit(x, "npc"),
+        y = unit(y, "npc"),
+        just = "center",
+        hjust = 0.5,
+        vjust = 0.5,
         gp = grid::gpar(
-          fontsize = label_size * 300 , # fontsizeはpx単位で解釈されるようなので、label_sizeをスケール
+          fontsize = label_size * 300,
           col = label_color,
           fontfamily = fontfamily,
           lineheight = 0.8
         )
       )
+    } else {
+      cat("Skipping cell:", tm_slot$name, "Level:", tm_slot$level, "not in", levels, "\n")
     }
   }) %>% invisible
 

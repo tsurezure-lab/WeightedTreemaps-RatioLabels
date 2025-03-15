@@ -46,9 +46,7 @@
 #' @param error_tol (numeric) The allowed maximum error tolerance of a cell.
 #'   The algorithm will stop when all cells have lower error than this value.
 #'   It is calculated as the absolute difference of a cell's area to its target
-#'   area. The default is 0.01 (or 1 \%) of the total parental area. Note: this
-#'   is is different from a relative per-cell error, where 1 \% would be more
-#'   strict.
+#'   area. The default is 0.05 (or 5 %) of the total parental area to improve convergence.
 #' @param convergence (character) One of "slow", "intermediate", or "fast".
 #'   Intermediate (default) and fast try to adjust cell weights stronger such
 #'   that the algorithm converges faster towards the final size of the cell.
@@ -146,10 +144,10 @@ voronoiTreemap <- function(
   data,
   levels,
   cell_size,
-  shape = "rect",
+  shape = "rounded_rect",  # デフォルトを rounded_rect に復元
   positioning = "regular",
-  error_tol = 0.01,
-  maxIteration = 200,
+  error_tol = 0.05,  # 収束を改善するためにデフォルトを 0.05 に
+  maxIteration = 200,  # 収束を改善するためにデフォルトを 200 に
   verbose = FALSE
 ) {
   # 入力データの検証
@@ -174,232 +172,231 @@ voronoiTreemap <- function(
 
   # ratio を cells に追加（データフレームから取得）
   if ("ratio" %in% names(data)) {
-    # データの順序を levels と cell_size に基づいて調整
-    data_ordered <- data %>%
-      arrange(across(all_of(levels)), .by_group = TRUE) %>%
-      mutate(row_id = row_number())
-
-    # result@cells の順序を levels に基づいて調整
-    cell_names <- sapply(result@cells, function(cell) cell$name)
-    cell_order <- order(match(cell_names, unique(data[[levels[length(levels)]]))))
-
-    # ratio を正しくマッピング
-    if (length(cell_order) == nrow(data_ordered)) {
+    # levels から列名を取得
+    level1 <- levels[1]  # 例: "secondary_cluster_name"
+    level2 <- levels[2]  # 例: "primary_cluster_name"
+    
+    # クラスタ名と ratio をマッピング
+    # NA や重複を考慮して一意のキーを生成
+    ratio_data <- data[!duplicated(data[[level1]]), ]  # レベル1で重複を削除
+    ratio_map <- setNames(ratio_data$ratio, ratio_data[[level1]])
+    if (length(levels) > 1) {
       for (i in seq_along(result@cells)) {
-        cell_idx <- cell_order[i]
-        result@cells[[i]]$ratio <- data_ordered$ratio[cell_idx]
+        cell_name <- result@cells[[i]]$name
+        if (result@cells[[i]]$level == 2) {
+          parent_name <- names(result@cells)[i]  # 親クラスタ名
+          cell_key <- paste(cell_name, parent_name, sep = "_")
+          # レベル2では親の ratio を継承
+          result@cells[[i]]$ratio <- ratio_map[parent_name]
+        } else {
+          cell_key <- cell_name
+          result@cells[[i]]$ratio <- ratio_map[cell_name]
+        }
       }
     } else {
-      warning("Mismatch between data rows and generated cells. Ratio assignment may be incorrect.")
+      for (i in seq_along(result@cells)) {
+        cell_name <- result@cells[[i]]$name
+        result@cells[[i]]$ratio <- ratio_map[cell_name]
+      }
     }
-  } else {
-    warning("No 'ratio' column found in data. Skipping ratio assignment.")
   }
 
   return(result)
 }
 
-  # CORE FUNCTION (RECURSIVE)
-  voronoi_core <- function(level, df, parent = NULL, output = list()) {
+# CORE FUNCTION (RECURSIVE)
+voronoi_core <- function(level, df, parent = NULL, output = list()) {
 
-    # set counter for number of maximum tries to not get stuck
-    # in repeat loop
-    counter = 1
+  # set counter for number of maximum tries to not get stuck
+  # in repeat loop
+  counter = 1
 
-    repeat {
+  repeat {
 
-      # CREATE VORONOI TREEMAP OBJECT
-      #
-      # 1. define the boundary polygon
-      # either predefined rectangular bounding box for 1st level
-      if (level == 1) {
+    # CREATE VORONOI TREEMAP OBJECT
+    #
+    # 1. define the boundary polygon
+    # either predefined rectangular bounding box for 1st level
+    if (level == 1) {
 
-        if (is.list(shape)) {
-          ParentPoly <- poly_transform_shape(shape)
-        } else {
-          if (shape == "rectangle") {
-            ParentPoly <- list(
-              x = c(0, 0, 2000, 2000, 0),
-              y = c(0, 2000, 2000, 0, 0)
-            )
-          } else if (shape == "circle") {
-            ParentPoly <- list(
-              x = sin(seq(0, 2, 2/50)*pi) * 1000 + 1000,
-              y = cos(seq(0, 2, 2/50)*pi) * 1000 + 1000
-            )
-          } else if (shape == "hexagon") {
-            ParentPoly <- list(
-              x = sin(seq(0, 2, 2/6)*pi) * 1000 + 1000,
-              y = cos(seq(0, 2, 2/6)*pi) * 1000 + 1000
-            )
-          } else if (shape == "rounded_rect") {
-            ParentPoly <- list(
-              x = rounded_rect[[1]],
-              y = rounded_rect[[2]]
-            )
-          } else {
-            stop("shape is not a coordinate list, nor one of 'rectangle', 'rounded_rect', circle', or 'hexagon'.")
-          }
-        }
-
-        # turn boundary polygon into sf polygon object for treemap generation
-        sfpoly <- to_sfpoly(ParentPoly)
-
+      if (is.list(shape)) {
+        ParentPoly <- poly_transform_shape(shape)
       } else {
-
-        # or the parental polygon in case of all lower levels > 1
-        stopifnot(!is.null(parent))
-        sfpoly <- parent
-        ParentPoly <- list(x = parent[[1]][, 1], y = parent[[1]][, 2])
-
+        if (shape == "rectangle") {
+          ParentPoly <- list(
+            x = c(0, 0, 2000, 2000, 0),
+            y = c(0, 2000, 2000, 0, 0)
+          )
+        } else if (shape == "circle") {
+          ParentPoly <- list(
+            x = sin(seq(0, 2, 2/50)*pi) * 1000 + 1000,
+            y = cos(seq(0, 2, 2/50)*pi) * 1000 + 1000
+          )
+        } else if (shape == "hexagon") {
+          ParentPoly <- list(
+            x = sin(seq(0, 2, 2/6)*pi) * 1000 + 1000,
+            y = cos(seq(0, 2, 2/6)*pi) * 1000 + 1000
+          )
+        } else if (shape == "rounded_rect") {
+          if (!exists("rounded_rect")) {
+            stop("rounded_rect is not defined. Ensure it is loaded with data(rounded_rect).")
+          }
+          ParentPoly <- list(
+            x = rounded_rect[[1]],
+            y = rounded_rect[[2]]
+          )
+        } else {
+          stop("shape is not a coordinate list, nor one of 'rectangle', 'rounded_rect', 'circle', or 'hexagon'.")
+        }
       }
 
-      # 2. generate starting coordinates within the boundary polygon
-      # using sp package's spsample function.
-      ncells <- tibble::deframe(dplyr::count(df, get(levels[level])))
+      # turn boundary polygon into sf polygon object for treemap generation
+      sfpoly <- to_sfpoly(ParentPoly)
 
-      # positioning can be defined globally or for each level independently
-      positioning <- ifelse(
-        length(positioning) == 1,
-        positioning,
-        positioning[level]
+    } else {
+
+      # or the parental polygon in case of all lower levels > 1
+      stopifnot(!is.null(parent))
+      sfpoly <- parent
+      ParentPoly <- list(x = parent[[1]][, 1], y = parent[[1]][, 2])
+
+    }
+
+    # 2. generate starting coordinates within the boundary polygon
+    # using sp package's spsample function.
+    ncells <- tibble::deframe(dplyr::count(df, get(levels[level])))
+
+    # positioning can be defined globally or for each level independently
+    positioning <- ifelse(
+      length(positioning) == 1,
+      positioning,
+      positioning[level]
+    )
+
+    if (length(ncells) != 1) {
+      sampledPoints <- samplePoints(
+        ParentPoly = ParentPoly,
+        n = length(ncells),
+        seed = seed,
+        positioning = positioning
+      )
+    }
+
+    # 3. generate the weights, these are the (aggregated) scaling factors
+    # supplied by the user or simply the n members per cell
+    if (is.null(cell_size)) {
+      # average cell size by number of members, if no function is given
+      weights <- ncells / sum(ncells)
+    } else {
+      # average cell size by user defined function, e.g. sum of expression values
+      # the cell size is calculated as aggregated relative fraction of total
+      stopifnot(is.numeric(df[[cell_size]]))
+      weights <- df %>%
+        dplyr::group_by(get(levels[level])) %>%
+        dplyr::summarise(fun(get(cell_size)))
+      weights <- weights[[2]] / sum(weights[[2]])
+    }
+    # reorder starting coordinate positions by weights (= target cell areas)
+    # if sorting by area is toggled
+    if (length(ncells) != 1 &&
+        positioning %in% c("regular_by_area", "clustered_by_area")) {
+      sampledPoints <- sampledPoints[order(order(weights)), ]
+    }
+
+    # 4. generate custom color values for each cell that can be used
+    # with different palettes when drawing;
+    if (!is.null(custom_color)) {
+      color_value <- df %>%
+        dplyr::group_by(get(levels[level])) %>%
+        dplyr::summarise(fun(get(custom_color)))
+      color_value <- color_value[[2]]
+      color_value <- setNames(color_value, names(ncells))
+    }
+
+    # 5. generate additively weighted voronoi treemap object;
+    # the allocate function returns a list of polygons to draw,
+    # among others.
+    # if the parent has only 1 child, skip map generation
+    # and make pseudo treemap object instead
+    if (length(ncells) == 1) {
+      treemap <- list(list(
+        name = names(ncells),
+        poly = sfpoly,
+        site = poly_centroid(ParentPoly[[1]], ParentPoly[[2]]),
+        weight = weights,
+        area = sf::st_area(sfpoly),
+        target = weights,
+        count = 0
+      ))
+      names(treemap) <- names(ncells)[1]
+    } else {
+      treemap <- allocate(
+        names = names(ncells),
+        s = list(
+          x = sampledPoints[, 1],
+          y = sampledPoints[, 2]),
+        w = weights,
+        target = weights,
+        maxIteration = maxIteration,
+        error_tol = error_tol,
+        convergence = "slow",  # 負の area を減らすために "slow" に設定
+        outer = sfpoly,
+        debug = debug
       )
 
-      if (length(ncells) != 1) {
-        sampledPoints <- samplePoints(
-          ParentPoly = ParentPoly,
-          n = length(ncells),
-          seed = seed,
-          positioning = positioning
-        )
+      # error handling in case of failed tesselation:
+      # try up to ten new random starting positions before finally giving up
+      if (is.null(treemap) & counter < 10) {
+        if (!is.null(seed)) { seed = seed + 1 }
+        counter = counter + 1
+        message("Iteration failed, randomising positions...")
+        next
+      } else if (is.null(treemap) & counter >= 10) {
+        stop("Iteration failed after 10 randomisation trials, try to rerun treemap with new seed")
       }
 
-      # 3. generate the weights, these are the (aggregated) scaling factors
-      # supplied by the user or simply the n members per cell
-      if (is.null(cell_size)) {
-        # average cell size by number of members, if no function is given
-        weights <- ncells / sum(ncells)
-      } else {
-        # average cell size by user defined function, e.g. sum of expression values
-        # the cell size is calculated as aggregated relative fraction of total
-        stopifnot(is.numeric(df[[cell_size]]))
-        weights <- df %>%
-          dplyr::group_by(get(levels[level])) %>%
-          dplyr::summarise(fun(get(cell_size)))
-        weights <- weights[[2]]/sum(weights[[2]])
-      }
-      # reorder starting coordinate positions by weights (= target cell areas)
-      # if sorting by area is toggled
-      if (length(ncells) != 1 &
-          positioning %in% c("regular_by_area", "clustered_by_area")) {
-        sampledPoints <- sampledPoints[order(order(weights)), ]
-      }
-
-      # 4. generate custom color values for each cell that can be used
-      # with different palettes when drawing;
-      if (!is.null(custom_color)) {
-        color_value <- df %>%
-          dplyr::group_by(get(levels[level])) %>%
-          dplyr::summarise(fun(get(custom_color)))
-        color_value <- color_value[[2]]
-        color_value <- setNames(color_value, names(ncells))
-      }
-
-      # 5. generate additively weighted voronoi treemap object;
-      # the allocate function returns a list of polygons to draw,
-      # among others.
-      # if the parent has only 1 child, skip map generation
-      # and make pseudo treemap object instead
-      if (length(ncells) == 1) {
-
-        treemap <- list(list(
-          name = names(ncells),
-          poly = sfpoly,
-          site = poly_centroid(ParentPoly[[1]], ParentPoly[[2]]),
-          weight = weights,
-          area = sf::st_area(sfpoly),
-          target = weights,
-          count = 0
-        ))
-        names(treemap) <- names(ncells)[1]
-
-      } else {
-
-        treemap <- allocate(
-          names = names(ncells),
-          s = list(
-            x = sampledPoints[, 1],
-            y = sampledPoints[, 2]),
-          w = weights,
-          target = weights,
-          maxIteration = maxIteration,
-          error_tol = error_tol,
-          convergence = convergence,
-          outer = sfpoly,
-          debug = debug
-        )
-
-        # error handling in case of failed tesselation:
-        # try up to ten new random starting positions before finally giving up
-        if (is.null(treemap) & counter < 10) {
-          if (!is.null(seed)) {seed = seed + 1}
-          counter = counter + 1
-          message("Iteration failed, randomising positions...")
-          next
-        } else if (is.null(treemap) & counter >= 10) {
-          stop("Iteration failed after 10 randomisation trials, try to rerun treemap with new seed")
+      # print summary of cell tesselation
+      if (debug || verbose) {
+        tessErr <- sapply(treemap, function(tm) tm$area)
+        if (any(tessErr < 0)) {
+          warning("Negative area detected. Adjusting weights and retrying may help.")
         }
-
-        # print summary of cell tesselation
-        if (debug || verbose) {
-          tessErr <- sapply(treemap, function(tm) tm$area)
-          tessErr <- abs(tessErr/sum(tessErr) - weights)
-          message("Level ", level, " tesselation: ",
-            round(mean(tessErr) * 100, 2), " % mean error, ",
-            round(max(tessErr) * 100, 2), " % max error, ",
-            treemap[[1]]$count, " iterations."
-          )
-        }
-
+        tessErr <- abs(tessErr / sum(tessErr) - weights)
+        message("Level ", level, " tesselation: ",
+                round(mean(tessErr) * 100, 2), " % mean error, ",
+                round(max(tessErr) * 100, 2), " % max error, ",
+                treemap[[1]]$count, " iterations.")
       }
+    }
 
+    # add level and custom color info to treemap
+    for (i in names(ncells)) {
+      treemap[[i]]$level <- level
+      treemap[[i]]$custom_color <- if (!is.null(custom_color)) color_value[[i]] else NA
+    }
 
-      # add level and custom color info to treemap
-      for (i in names(ncells)) {
-        treemap[[i]]$level <- level
-        treemap[[i]]$custom_color <- {if (!is.null(custom_color))
-          color_value[[i]] else NA}
-      }
-
-
-      # CALL CORE FUNCTION RECURSIVELY
-      if (level != length(levels)) {
-
-        # iterate through all possible sub-categories,
-        # these are the children of the parental polygon
-        # and pass the children's polygon as new parental
-        # also add current tesselation results to output list
-        res <- lapply(1:length(ncells), function(i) {
-
-          voronoi_core(
-            level = level + 1,
-            df = subset(df, get(levels[level]) %in% names(ncells)[i]),
-            parent = treemap[[i]]$poly,
-            output = {
-              output[[paste0("LEVEL", level, "_", names(ncells)[i])]] <- treemap[[i]]
-              output
-            }
-          )
-        }) %>%
+    # CALL CORE FUNCTION RECURSIVELY
+    if (level != length(levels)) {
+      # iterate through all possible sub-categories,
+      # these are the children of the parental polygon
+      # and pass the children's polygon as new parental
+      # also add current tesselation results to output list
+      res <- lapply(1:length(ncells), function(i) {
+        voronoi_core(
+          level = level + 1,
+          df = subset(df, get(levels[level]) %in% names(ncells)[i]),
+          parent = treemap[[i]]$poly,
+          output = {
+            output[[paste0("LEVEL", level, "_", names(ncells)[i])]] <- treemap[[i]]
+            output
+          }
+        )
+      }) %>%
         unlist(recursive = FALSE)
-        return(res)
-
-      } else {
-
-        names(treemap) <- paste0("LEVEL", level, "_", names(ncells))
-        return(c(output, treemap))
-
-      }
+      return(res)
+    } else {
+      names(treemap) <- paste0("LEVEL", level, "_", names(ncells))
+      return(c(output, treemap))
     }
   }
 
@@ -414,7 +411,6 @@ voronoiTreemap <- function(
   if (debug || verbose) {
     message("Treemap successfully created.")
   }
-
 
   # set S4 class and return result
   tm <- voronoiResult(
@@ -436,5 +432,4 @@ voronoiTreemap <- function(
   )
 
   return(tm)
-
 }

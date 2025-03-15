@@ -341,40 +341,38 @@ drawTreemap <- function(
       }
 
     } else {
-      # 比率ラベルの準備 (修正)
+      # 比率ラベルの準備 (シンプルに)
       ratio_labels <- list()
       if(all(c("primary_cluster_name", "secondary_cluster_name",
                "primary_cluster_ratio", "secondary_cluster_ratio") %in% colnames(treemap@data))){
+
         for (cell_name in names(treemap@cells)) {
           level <- treemap@cells[[cell_name]]$level
-          if(level == 1){
+          if (level == 1) {
+            # secondary_cluster_name で一致する行を探す
             ratio <- treemap@data$secondary_cluster_ratio[treemap@data$secondary_cluster_name == cell_name]
-            # 一致するものがない場合は NA を明示的に代入
-            if(length(ratio) == 0) {
-              ratio_labels[[cell_name]] <- NA_character_
-            } else {
-              ratio_labels[[cell_name]] <- paste0(round(ratio, 1), "%")
+            if (length(ratio) > 0) { # ratioが存在する場合のみ
+                ratio_labels[[cell_name]] <- paste0(round(ratio[1], 1), "%") # 最初の要素を使用
             }
 
-          } else if (level == 2){
+          } else if (level == 2) {
+            # primary_cluster_name で一致する行を探す
             ratio <- treemap@data$primary_cluster_ratio[treemap@data$primary_cluster_name == cell_name]
-            # 一致するものがない場合は NA を明示的に代入
-            if(length(ratio) == 0){
-              ratio_labels[[cell_name]] <- NA_character_
-            } else {
-              ratio_labels[[cell_name]] <- paste0(round(ratio, 1), "%")
+
+            if(length(ratio) > 0){
+                ratio_labels[[cell_name]] <- paste0(round(ratio[1], 1), "%")
             }
           }
         }
       }
 
+
       draw_label_voronoi(
         treemap@cells, label_level, label_size, label_color, label_autoscale,
-        ratio_labels = ratio_labels # 追加
+        ratio_labels = ratio_labels
       )
     }
 
-  }
 
 
 

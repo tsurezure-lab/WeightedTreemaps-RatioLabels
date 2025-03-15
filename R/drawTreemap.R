@@ -47,13 +47,15 @@
 #' @param label_color (character) A single character indicating color for cell labels.
 #'   Alternatively a vector of \code{length(label_level)}, then each label
 #'   is drawn with the specified color.
+#' @param label_ratio_size (numeric) A single number indicating relative size of the ratio label
+#'   (second line) in relation to its parent cell. Alternatively a numeric vector of
+#'   \code{length(label_level)} that specifies relative size of ratio labels for each level
+#'   individually. Default is \code{label_size * 0.8}.
+#' @param label_ratio_color (character) A single character indicating color for ratio labels.
+#'   Alternatively a vector of \code{length(label_level)}, then each ratio label
+#'   is drawn with the specified color. Default is \code{label_color}.
 #' @param label_autoscale (logical) Whether to automatically scale labels based on
 #'   their estimated width. Default is TRUE.
-#' @param label_ratio_format (character) Format string for displaying cluster ratios
-#'   in labels, using \code{sprintf} syntax. For example, "%.1f%%" displays ratios
-#'   as percentages with one decimal place. Default is "%.1f%%". Set to NULL to
-#'   disable ratio display.
-#' @param fontfamily (character) The font family to use for labels. Default is "sans".
 #' @param title (character) An optional title, default to \code{NULL}.
 #' @param title_size (numeric) The size (or 'character expansion') of the title.
 #' @param title_color (character) Color for title.
@@ -94,13 +96,14 @@
 #'   A = rep(c("abcd", "efgh"), each = 4),
 #'   B = letters[1:8],
 #'   size = c(37, 52, 58, 27, 49, 44, 34, 45),
-#'   ratio = c(0.1, 0.15, 0.2, 0.05, 0.12, 0.13, 0.15, 0.1)  # 例としてratioを追加
+#'   primary_cluster_ratio = c(0.1, 0.15, 0.2, 0.05, 0.12, 0.13, 0.15, 0.1),
+#'   secondary_cluster_ratio = c(0.2, 0.25, 0.3, 0.15, 0.22, 0.23, 0.25, 0.2)
 #' )
 #'
 #' # compute treemap
 #' tm <- voronoiTreemap(
 #'   data = df,
-#'   levels = c("B"),
+#'   levels = c("B", "A"),
 #'   cell_size = "size",
 #'   shape = "circle",
 #'   positioning = "regular",
@@ -108,39 +111,17 @@
 #' )
 #'
 #' # plot treemap with each cell colored by name (default) and display ratio
-#' drawTreemap(tm, label_size = 1, color_type = "categorical", label_ratio_format = "%.1f%%")
+#' drawTreemap(tm, label_size = 1, color_type = "categorical",
+#'             label_ratio_size = 0.8, label_ratio_color = grey(0.7))
 #'
-#' # plot treemap with each cell colored by name, but larger cells
-#' # lighter and smaller cells darker
-#' drawTreemap(tm, label_size = 1, color_type = "both", label_ratio_format = "%.1f%%")
+#' # plot treemap with each cell colored by name, but larger cells lighter and smaller cells darker
+#' drawTreemap(tm, label_size = 1, color_type = "both",
+#'             label_ratio_size = 0.8, label_ratio_color = grey(0.7))
 #'
 #' # plot treemap with different color palette and style
 #' drawTreemap(tm, label_size = 1, label_color = grey(0.3),
 #'             border_color = grey(0.3), color_palette = heat.colors(6),
-#'             label_ratio_format = "%.1f%%"
-#' )
-#'
-#' # ---------------------------------------------
-#'
-#' # load example data
-#' data(mtcars)
-#' mtcars$car_name = gsub(" ", "\n", row.names(mtcars))
-#'
-#' # generate sunburst treemap
-#' tm <- sunburstTreemap(
-#'   data = mtcars,
-#'   levels = c("gear", "cyl"),
-#'   cell_size = "hp"
-#' )
-#'
-#' # draw treemap
-#' drawTreemap(tm,
-#'   title = "A sunburst treemap",
-#'   legend = TRUE,
-#'   border_size = 2,
-#'   label_color = grey(0.6),
-#'   label_ratio_format = "%.1f%%"
-#' )
+#'             label_ratio_size = 0.8, label_ratio_color = grey(0.7))
 #'
 #' @importFrom dplyr %>%
 #' @importFrom grid grid.newpage
@@ -162,7 +143,6 @@
 #' @importFrom utils tail
 #'
 #' @export drawTreemap
-#'
 drawTreemap <- function(
   treemap,
   levels = 1:length(treemap@call$levels),
@@ -176,9 +156,9 @@ drawTreemap <- function(
   label_level = max(levels),
   label_size = 1,
   label_color = grey(0.9),
+  label_ratio_size = NULL,  # 割合のフォントサイズ（新たに追加）
+  label_ratio_color = NULL,  # 割合の色（新たに追加）
   label_autoscale = TRUE,
-  label_ratio_format = "%.1f%%",  # 構成比表示用の引数（デフォルトはパーセント）
-  fontfamily = "sans",  # フォントファミリー用の引数を追加
   title = NULL,
   title_size = 1,
   title_color = grey(0.5),
@@ -192,7 +172,6 @@ drawTreemap <- function(
   position = c(1, 1),
   add = FALSE
 ) {
-
   # validate input data and parameters
   validate_treemap(treemap,
     width, height, layout, position, add,
@@ -200,11 +179,6 @@ drawTreemap <- function(
     label_level, color_palette,
     border_color, label_color,
     custom_range, title)
-
-  # Validate label_ratio_format
-  if (!is.null(label_ratio_format) && !is.character(label_ratio_format)) {
-    stop("'label_ratio_format' must be a character string or NULL")
-  }
 
   # determine color levels based on treemap type
   if (is.null(color_level)) {
@@ -221,6 +195,7 @@ drawTreemap <- function(
   }
 
   # generate main grid viewport
+  # optionally subdividing the plot area by layout argument
   grid::pushViewport(
     grid::viewport(
       layout = grid::grid.layout(
@@ -231,6 +206,7 @@ drawTreemap <- function(
   )
 
   # generate child viewport for drawing one treemap 'object'
+  # including title and legend
   grid::pushViewport(
     grid::viewport(
       layout.pos.row = position[1],
@@ -238,7 +214,10 @@ drawTreemap <- function(
     )
   )
 
-  # generate viewport to draw treemap in
+  # generate viewport to draw treemap in, with some user-specified margins
+  # plus optional margins if legend or title is drawn
+  # key offsets are 8 values: treemap center x, y, width, height, legend center x, y,
+  # width and height
   if (!legend) { legend_position <- "none" }
   key_offsets <- switch(
     legend_position,
@@ -267,31 +246,52 @@ drawTreemap <- function(
   )
 
   # DRAWING POLYGONS
+  # There are different possible cases to determine the cell color
+  # depending on the user's choice
   treemap <- add_color(treemap, color_palette, color_type,
     color_level, color_steps, custom_range)
+  # the treemap object is a nested list
+  # use apply function to draw the single polygons for desired level
   lapply(treemap@cells, function(tm_slot) {
     if (tm_slot$level %in% color_level) {
       drawPoly(tm_slot$poly, tm_slot$name,
         fill = tm_slot$color, lwd = NA, col = NA)
     }
-    if (color_type == "both" &&
-        tm_slot$level == max(levels) &&
-        !(tm_slot$level %in% color_level)) {
+    # in case of color_type == "both" draw also lowest level
+    if (color_type == "both" &
+        tm_slot$level == max(levels) &
+        !(tm_slot$level %in% color_level)
+    ) {
       drawPoly(tm_slot$poly, tm_slot$name,
         fill = tm_slot$color, lwd = NA, col = NA)
     }
   }) %>% invisible
 
   # DRAWING BORDERS
-  if (!is.null(border_color) && !is.null(border_size)) {
+  if (!is.null(border_color) & !is.null(border_size)) {
+    # draw only borders for the correct level
     lapply(treemap@cells, function(tm_slot) {
       if (tm_slot$level %in% border_level) {
-        border_lwd <- if (length(border_size) == 1) {
-          if (inherits(treemap, "sunburstResult")) border_size else border_size / tm_slot$level
+        # determine border size and color from supplied options;
+        # if single value is supplied for border size
+        if (length(border_size) == 1) {
+          # differentiate between voronoi treemap where we want decreasing
+          # lwd of borders with decreasing level, and sunburst treemap where
+          # we want the same size
+          if (inherits(treemap, "sunburstResult")) {
+            border_lwd <- border_size
+          } else {
+            border_lwd <- border_size / tm_slot$level
+          }
         } else {
-          border_size[tm_slot$level]
+          border_lwd <- border_size[tm_slot$level]
         }
-        border_col <- if (length(border_color) > 1) border_color[tm_slot$level] else border_color
+
+        if (length(border_color) > 1) {
+          border_col <- border_color[tm_slot$level]
+        } else {
+          border_col <- border_color
+        }
 
         drawPoly(tm_slot$poly, tm_slot$name,
           fill = NA, lwd = border_lwd, col = border_col)
@@ -300,30 +300,36 @@ drawTreemap <- function(
   }
 
   # DRAWING LABELS
-  if (!is.null(label_level) && !is.null(label_size) && !is.null(label_color)) {
+  if (
+    !is.null(label_level) &
+    !is.null(label_size) &
+    !is.null(label_color)
+  ) {
+    # two possible options: labels for voronoi treemaps
+    # and labels for sunburst treemaps
     if (inherits(treemap, "sunburstResult")) {
       if (length(label_level) > 1) {
         stop("'label_level' should only have length 1 (labels for one level only)")
       } else {
         draw_label_sunburst(
           treemap@cells, label_level, label_size, label_color,
-          treemap@call$diameter_outer,
-          label_ratio_format = label_ratio_format,
-          fontfamily = fontfamily  # フォントファミリーを渡す
+          treemap@call$diameter_outer
         )
       }
     } else {
       draw_label_voronoi(
         treemap@cells, label_level, label_size, label_color, label_autoscale,
-        label_ratio_format = label_ratio_format,
-        fontfamily = fontfamily  # フォントファミリーを渡す
+        label_ratio_size, label_ratio_color
       )
     }
   }
 
   # DRAW OPTIONAL TITLE
   if (!is.null(title)) {
+    # pop viewport back to parent
     grid::popViewport()
+
+    # generate viewport for title
     grid::pushViewport(
       grid::viewport(
         x = key_offsets[1],
@@ -341,7 +347,11 @@ drawTreemap <- function(
 
   # DRAW OPTIONAL LEGEND
   if (legend) {
+    # pop viewport back to parent
     grid::popViewport()
+
+    # generate viewport for legend; viewport for legend is also scaled
+    # depending on title and height arguments
     grid::pushViewport(
       grid::viewport(
         x = key_offsets[5],
@@ -350,6 +360,8 @@ drawTreemap <- function(
         height = key_offsets[8] - title_offset
       )
     )
+
+    # create legend as a list of options
     pal <- treemap@call$palette
     colorkey <- list(
       space = legend_position,
@@ -360,8 +372,14 @@ drawTreemap <- function(
       axis.line = list(alpha = 1, col = border_color, lwd = 1, lty = 1),
       axis.text = list(alpha = 1, cex = 0.8, col = title_color, font = 1, lineheight = 1)
     )
-    grid.draw(lattice::draw.colorkey(key = colorkey))
+
+    # draw using draw.colorkey from lattice::levelplot
+    grid.draw(
+      lattice::draw.colorkey(key = colorkey)
+    )
   }
 
+  # Finally pop the viewport back to the parent viewport
+  # in order to allow adding more plots
   popViewport(3)
 }

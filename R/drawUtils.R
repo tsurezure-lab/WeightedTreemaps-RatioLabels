@@ -178,6 +178,71 @@ draw_label_voronoi <- function(
 
 }
 
+# 新しい関数 draw_label_voronoi_modified を追加
+#' @keywords internal
+draw_label_voronoi_modified <- function(
+  tm_cells,
+  label_level,
+  label_size,
+  label_color,
+  label_autoscale,
+  treemap # treemap オブジェクト全体を渡す
+  )
+{
+
+  # determine label size from supplied options
+  if (length(label_size) > 1) {
+    label_cex <- label_size
+  } else {
+    label_cex <- rep(label_size, length(label_level))
+  }
+
+  # determine label color from supplied options
+  if (length(label_color) > 1) {
+    label_col <- label_color
+  } else {
+    label_col <- rep(label_color, length(label_level))
+  }
+
+  # draw only labels for the correct level
+  lapply(tm_cells, function(tm_slot) {
+    if (tm_slot$level %in% label_level) {
+
+      # get the size and color for current level
+      current_cex <- label_cex[which(label_level == tm_slot$level)]
+      current_col <- label_col[which(label_level == tm_slot$level)]
+
+      # 変更箇所：ここから
+      # calculate percentage
+      total_size <- sum(sapply(treemap@cells, function(x) x$size))
+      percentage <- round(tm_slot$size / total_size * 100, 2)
+      # create label with name and percentage
+      label_text <- paste0(tm_slot$name, "\n(", percentage, "%)")
+      # 変更箇所：ここまで
+
+      # determine font size
+      if (label_autoscale) {
+        # estimate width of the label
+        label_width <- strwidth(label_text, units = "inches", cex = 1)
+        # convert polygon width in inches (2000 units correspond to the treemap width/height)
+        poly_width <- (max(tm_slot$poly$x) - min(tm_slot$poly$x)) * (par("pin")[1] / 2000)
+        # scale label
+        current_cex <- current_cex * 0.8 * poly_width / label_width
+      }
+
+      # draw text to polygon
+      grid::grid.text(
+        label_text,
+        x = unit(mean(range(tm_slot$poly$x)), "native"),
+        y = unit(mean(range(tm_slot$poly$y)), "native"),
+        gp = gpar(cex = current_cex, col = current_col)
+      )
+
+    }
+  }) %>% invisible
+
+}
+                           
 
 # function to draw labels for sunburst treemap
 draw_label_sunburst <- function(

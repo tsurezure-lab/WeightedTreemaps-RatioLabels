@@ -141,7 +141,7 @@ draw_label_voronoi <- function(
     label_ratio_size <- label_size * 0.8  # 割合のフォントサイズをクラスタ名の80%に
   }
   if (is.null(label_ratio_color)) {
-    label_ratio_color <- label_color  # デフォルトではクラスタ名と同じ色
+    label_ratio_color <- adjustcolor(label_color, alpha.f = 0.7)  # 透明度を追加
   }
 
   for (tm_slot in rev(cells)) {

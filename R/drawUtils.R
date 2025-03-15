@@ -126,8 +126,8 @@ draw_sector <- function(
   )
 }
 
-# draw_label_voronoi 関数（Voronoiツリーマップ用のラベル描画）　#', fontfamily = "sans"'
-draw_label_voronoi <- function(cells, levels, size, color, autoscale, label_ratio_format = "%.1f%%") {
+# draw_label_voronoi 関数（Voronoiツリーマップ用のラベル描画）
+draw_label_voronoi <- function(cells, levels, size, color, autoscale, label_ratio_format = "%.1f%%", , fontfamily = "sans") {
   grid::grid.newpage()
   grid::pushViewport(viewport(xscale = c(0, 2000), yscale = c(0, 2000)))
   

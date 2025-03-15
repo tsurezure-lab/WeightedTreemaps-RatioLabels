@@ -130,7 +130,6 @@ draw_sector <- function(
 }
 
 # function to draw labels for voronoi treemap
-# function to draw labels for voronoi treemap
 draw_label_voronoi <- function(
   cells,
   label_level,
@@ -175,8 +174,8 @@ draw_label_voronoi <- function(
         gp = gpar(cex = label_cex, col = label_col)
       )
 
-      # 比率ラベルの描画 (追加)
-      if (!is.null(ratio_labels) && !is.na(ratio_labels[[tm_slot$name]])) {
+      # 比率ラベルの描画 (修正: NULLチェックに加えてlengthチェックも行う)
+      if (!is.null(ratio_labels) && length(ratio_labels[[tm_slot$name]]) > 0 && !is.na(ratio_labels[[tm_slot$name]])) {
           grid::grid.text(
             ratio_labels[[tm_slot$name]],  # 比率ラベル
             tm_slot$site[1],

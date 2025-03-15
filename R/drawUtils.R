@@ -189,7 +189,7 @@ draw_label_voronoi <- function(
       # 割合を描画（2行目）
       # 割合が NA でない場合のみ描画
       if (!is.na(tm_slot$ratio)) {
-        ratio_text <- sprintf("%.2f%%", tm_slot$ratio)
+        ratio_text <- sprintf("%.1f%%", tm_slot$ratio)
         # 2行目のY座標を調整（1行目の下に配置）
         y_offset <- -label_cex * 0.5  # フォントサイズに応じて調整
         grid::grid.text(

@@ -321,6 +321,7 @@ drawTreemap <- function(
 
 
   # DRAWING LABELS
+  # ラベルを改行し、グループの構成比を表示
   if (
     !is.null(label_level) &
     !is.null(label_size) &
@@ -341,9 +342,11 @@ drawTreemap <- function(
       }
 
     } else {
-      draw_label_voronoi(
-        treemap@cells, label_level, label_size, label_color, label_autoscale
+      # 変更箇所：ここから
+      draw_label_voronoi_modified(
+        treemap@cells, label_level, label_size, label_color, label_autoscale, treemap
       )
+      # 変更箇所：ここまで
     }
 
   }

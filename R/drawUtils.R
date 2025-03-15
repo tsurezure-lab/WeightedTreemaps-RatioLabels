@@ -135,39 +135,46 @@ draw_label_voronoi <- function(cells, levels, size, color, autoscale, label_rati
     cat("Processing cell:", tm_slot$name, "Level:", tm_slot$level, "\n")
     if (tm_slot$level %in% levels) {
       cat("Drawing label for:", tm_slot$name, "Level:", tm_slot$level, "\n")
-      # 以下は既存のコードをそのまま使用
       level_idx <- which(levels == tm_slot$level)
       label_size <- if (length(size) > 1) size[level_idx] else size
       label_color <- if (length(color) > 1) color[level_idx] else color
 
-      if (is.null(tm_slot$poly) || is.null(tm_slot$poly$x) || length(tm_slot$poly$x) == 0) {
+      # ポリゴンデータの存在確認
+      if (is.null(tm_slot$poly) || !inherits(tm_slot$poly, "sfg")) {
         warning("Invalid polygon data for cell: ", tm_slot$name)
         return(NULL)
       }
+
+      # サイトデータの存在確認
       if (is.null(tm_slot$site) || length(tm_slot$site) < 2) {
         warning("Invalid site data for cell: ", tm_slot$name)
         return(NULL)
       }
 
+      # ラベル名
       label <- tm_slot$name
       if (!is.null(label_ratio_format) && !is.null(tm_slot$ratio) && !is.na(tm_slot$ratio)) {
         ratio_text <- sprintf(label_ratio_format, tm_slot$ratio * 100)
         label <- paste(label, ratio_text, sep = "\n")
       }
 
+      # 重心計算
       if (inherits(tm_slot$poly, "sfg")) {
-          coords <- sf::st_coordinates(tm_slot$poly)[, c("X", "Y")]
-          centroid <- c(mean(coords[, "X"]), mean(coords[, "Y"]))
+        coords <- sf::st_coordinates(tm_slot$poly)[, c("X", "Y")]
+        centroid <- c(mean(coords[, "X"]), mean(coords[, "Y"]))
       } else {
-          centroid <- tm_slot$site
+        centroid <- tm_slot$site
       }
       x <- centroid[1] / 2000
       y <- centroid[2] / 2000
 
+      # オートスケーリング
       if (autoscale) {
-        if (length(tm_slot$poly$x) > 1) {
-          width <- (max(tm_slot$poly$x) - min(tm_slot$poly$x)) / 2000
-          height <- (max(tm_slot$poly$y) - min(tm_slot$poly$y)) / 2000
+        # to_coords を使用して座標を抽出
+        poly_coords <- to_coords(tm_slot$poly)
+        if (length(poly_coords$x) > 1) {
+          width <- (max(poly_coords$x) - min(poly_coords$x)) / 2000
+          height <- (max(poly_coords$y) - min(poly_coords$y)) / 2000
           char_width <- 0.05
           char_height <- 0.08
           label_aspect_ratio <- nchar(label) * char_width / (2 * char_height)
@@ -190,6 +197,7 @@ draw_label_voronoi <- function(cells, levels, size, color, autoscale, label_rati
 
       cat("Label drawn for:", tm_slot$name, "at (", x, ",", y, ") with size", label_size, "\n")
 
+      # ラベルの描画
       grid::grid.text(
         label,
         x = unit(x, "npc"),

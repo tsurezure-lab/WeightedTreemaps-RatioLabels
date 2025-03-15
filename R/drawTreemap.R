@@ -1,4 +1,3 @@
-
 #' drawTreemap
 #'
 #' Draws the treemap object that was obtained by running \code{\link{voronoiTreemap}} or
@@ -50,6 +49,10 @@
 #'   is drawn with the specified color.
 #' @param label_autoscale (logical) Whether to automatically scale labels based on
 #'   their estimated width. Default is TRUE.
+#' @param label_ratio_format (character) Format string for displaying cluster ratios
+#'   in labels, using \code{sprintf} syntax. For example, "%.1f%%" displays ratios
+#'   as percentages with one decimal place. Default is "%.1f%%". Set to NULL to
+#'   disable ratio display.
 #' @param title (character) An optional title, default to \code{NULL}.
 #' @param title_size (numeric) The size (or 'character expansion') of the title.
 #' @param title_color (character) Color for title.
@@ -170,6 +173,7 @@ drawTreemap <- function(
   label_size = 1,
   label_color = grey(0.9),
   label_autoscale = TRUE,
+  label_ratio_format = "%.1f%%",  # 新しい引数の追加
   title = NULL,
   title_size = 1,
   title_color = grey(0.5),
@@ -181,16 +185,16 @@ drawTreemap <- function(
   height = 0.9,
   layout = c(1, 1),
   position = c(1, 1),
-  add = FALSE)
-{
+  add = FALSE
+) {
 
   # validate input data and parameters
   validate_treemap(treemap,
-  width, height, layout, position, add,
-  levels, color_level, border_level,
-  label_level, color_palette,
-  border_color, label_color,
-  custom_range, title)
+    width, height, layout, position, add,
+    levels, color_level, border_level,
+    label_level, color_palette,
+    border_color, label_color,
+    custom_range, title)
 
   # determine color levels based on treemap type
   if (is.null(color_level)) {
@@ -205,7 +209,6 @@ drawTreemap <- function(
   if (!add) {
     grid::grid.newpage()
   }
-
 
   # generate main grid viewport
   # optionally subdividing the plot area by layout argument
@@ -280,28 +283,16 @@ drawTreemap <- function(
     }
   }) %>% invisible
 
-
   # DRAWING BORDERS
   if (!is.null(border_color) & !is.null(border_size)) {
-
-    # draw only borders for the correct level
     lapply(treemap@cells, function(tm_slot) {
       if (tm_slot$level %in% border_level) {
-
-        # determine border size and color from supplied options;
-        # if single value is supplied for border size
         if (length(border_size) == 1) {
-
-          # differentiate between voronoi treemap where we want decreasing
-          # lwd of borders with decreasing level, and sunburst treemap where
-          # we want the same size
           if (inherits(treemap, "sunburstResult")) {
             border_lwd <- border_size
           } else {
             border_lwd <- border_size / tm_slot$level
           }
-
-          # or use different sizes for each level
         } else {
           border_lwd <- border_size[tm_slot$level]
         }
@@ -314,12 +305,9 @@ drawTreemap <- function(
 
         drawPoly(tm_slot$poly, tm_slot$name,
           fill = NA, lwd = border_lwd, col = border_col)
-
       }
     }) %>% invisible
-
   }
-
 
   # DRAWING LABELS
   if (
@@ -327,32 +315,27 @@ drawTreemap <- function(
     !is.null(label_size) &
     !is.null(label_color)
   ) {
-
     # two possible options: labels for voronoi treemaps
     # and labels for sunburst treemaps
     if (inherits(treemap, "sunburstResult")) {
-
       if (length(label_level) > 1) {
         stop("'label_level' should only have length 1 (labels for one level only)")
       } else {
         draw_label_sunburst(
           treemap@cells, label_level, label_size, label_color,
-          treemap@call$diameter_outer
+          treemap@call$diameter_outer, label_ratio_format  # 新しい引数を追加
         )
       }
-
     } else {
       draw_label_voronoi(
-        treemap@cells, label_level, label_size, label_color, label_autoscale
+        treemap@cells, label_level, label_size, label_color, label_autoscale,
+        label_ratio_format  # 新しい引数を追加
       )
     }
-
   }
-
 
   # DRAW OPTIONAL TITLE
   if (!is.null(title)) {
-
     # pop viewport back to parent
     grid::popViewport()
 
@@ -370,12 +353,10 @@ drawTreemap <- function(
       y = 0.5,
       gp = grid::gpar(cex = title_size, col = title_color)
     )
-
   }
 
   # DRAW OPTIONAL LEGEND
   if (legend) {
-
     # pop viewport back to parent
     grid::popViewport()
 
@@ -406,7 +387,6 @@ drawTreemap <- function(
     grid.draw(
       lattice::draw.colorkey(key = colorkey)
     )
-
   }
 
   # Finally pop the viewport back to the parent viewport

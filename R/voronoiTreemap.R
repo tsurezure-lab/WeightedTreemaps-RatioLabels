@@ -68,7 +68,6 @@ voronoiTreemap <- function(
   # CORE FUNCTION (RECURSIVE)
   voronoi_core <- function(level, df, parent = NULL, output = list()) {
     counter = 1
-
     repeat {
       # 1. Define the boundary polygon
       if (level == 1) {
@@ -112,7 +111,7 @@ voronoiTreemap <- function(
         weights <- df %>%
           dplyr::group_by(get(levels[level])) %>%
           dplyr::summarise(fun(get(cell_size)))
-        weights <- convertInput(weights[[2]])  # ここでconvertInputを使用
+        weights <- convertInput(weights[[2]])
       }
       if (length(ncells) != 1 && positioning %in% c("regular_by_area", "clustered_by_area")) {
         sampledPoints <- sampledPoints[order(order(weights)), ]
@@ -206,7 +205,26 @@ voronoiTreemap <- function(
     message("Treemap successfully created.")
   }
 
-  # 構成比の追加
+  # Set S4 class BEFORE adding ratios
+  tm <- voronoiResult(
+    cells = tm,
+    data = data,
+    call = list(
+      levels = levels,
+      fun = fun,
+      sort = sort,
+      filter = filter,
+      cell_size = cell_size,
+      custom_color = custom_color,
+      shape = shape,
+      maxIteration = maxIteration,
+      error_tol = error_tol,
+      seed = seed,
+      positioning = positioning
+    )
+  )
+
+  # 構成比の追加（S4クラス変換後）
   if (all(c("primary_cluster_ratio", "secondary_cluster_ratio") %in% names(data))) {
     level1 <- levels[1]
     level2 <- levels[2]
@@ -226,42 +244,5 @@ voronoiTreemap <- function(
     })
   }
 
-  # Set S4 class and return result
-  tm <- voronoiResult(
-    cells = tm,
-    data = data,
-    call = list(
-      levels = levels,
-      fun = fun,
-      sort = sort,
-      filter = filter,
-      cell_size = cell_size,
-      custom_color = custom_color,
-      shape = shape,
-      maxIteration = maxIteration,
-      error_tol = error_tol,
-      seed = seed,
-      positioning = positioning
-    )
-  )
-
   return(tm)
 }
-
-#' @importFrom Rcpp evalCpp
-#' @importFrom grid grid.newpage
-#' @importFrom grid pushViewport
-#' @importFrom grid viewport
-#' @importFrom dplyr %>%
-#' @importFrom dplyr mutate_if
-#' @importFrom dplyr group_by
-#' @importFrom dplyr summarise
-#' @importFrom dplyr count
-#' @importFrom tibble deframe
-#' @importFrom scales rescale
-#' @importFrom sf st_polygon
-#' @importFrom sf st_area
-#' @importFrom sp Polygon
-#' @importFrom sp spsample
-#'
-#' @useDynLib WeightedTreemaps, .registration = TRUE

@@ -229,19 +229,18 @@ voronoiTreemap <- function(
     level1 <- levels[1]  # "secondary_cluster_name"
     level2 <- levels[2]  # "primary_cluster_name"
     
-    # primary_cluster_nameごとにprimary_cluster_ratioを一意にマッピング
+    # primary_cluster_nameごとにprimary_cluster_ratioを一意にマッピング（全体に対する割合）
     primary_ratios <- data %>%
       group_by(!!sym(level2)) %>%
       summarise(ratio = first(primary_cluster_ratio),  # 最初の値を採用
-                total_count = sum(count)) %>%
+                total_count = sum(!!sym(cell_size))) %>%
       distinct()
     ratio_map_primary <- setNames(primary_ratios$ratio, primary_ratios[[level2]])
     
-    # secondary_cluster_name内でprimary_cluster_nameの割合を再計算
+    # secondary_cluster_name内でprimary_cluster_nameの割合を再計算（secondary_cluster_nameの合計に対する割合）
     secondary_ratios <- data %>%
       group_by(!!sym(level1), !!sym(level2)) %>%
-      summarise(secondary_ratio = first(secondary_cluster_ratio),
-                sub_count = sum(count)) %>%
+      summarise(sub_count = sum(!!sym(cell_size))) %>%
       group_by(!!sym(level1)) %>%
       mutate(total_count = sum(sub_count),
              ratio = (sub_count / total_count) * 100) %>%
@@ -249,6 +248,7 @@ voronoiTreemap <- function(
       select(!!sym(level1), ratio)
     ratio_map_secondary <- setNames(secondary_ratios$ratio, secondary_ratios[[level1]])
     
+    # 各セルに構成比を追加
     tm@cells <- lapply(tm@cells, function(tm_slot) {
       cell_name <- tm_slot$name
       if (tm_slot$level == 1) {
@@ -265,21 +265,3 @@ voronoiTreemap <- function(
 
   return(tm)
 }
-
-#' @importFrom Rcpp evalCpp
-#' @importFrom grid grid.newpage
-#' @importFrom grid pushViewport
-#' @importFrom grid viewport
-#' @importFrom dplyr %>%
-#' @importFrom dplyr mutate_if
-#' @importFrom dplyr group_by
-#' @importFrom dplyr summarise
-#' @importFrom dplyr count
-#' @importFrom tibble deframe
-#' @importFrom scales rescale
-#' @importFrom sf st_polygon
-#' @importFrom sf st_area
-#' @importFrom sp Polygon
-#' @importFrom sp spsample
-#'
-#' @useDynLib WeightedTreemaps, .registration = TRUE

@@ -95,7 +95,8 @@
 #' df <- data.frame(
 #'   A = rep(c("abcd", "efgh"), each = 4),
 #'   B = letters[1:8],
-#'   size = c(37, 52, 58, 27, 49, 44, 34, 45)
+#'   size = c(37, 52, 58, 27, 49, 44, 34, 45),
+#'   ratio = c(0.1, 0.15, 0.2, 0.05, 0.12, 0.13, 0.15, 0.1)  # 例としてratioを追加
 #' )
 #'
 #' # compute treemap
@@ -108,16 +109,17 @@
 #'   seed = 123
 #' )
 #'
-#' # plot treemap with each cell colored by name (default)
-#' drawTreemap(tm, label_size = 1, color_type = "categorical")
+#' # plot treemap with each cell colored by name (default) and display ratio
+#' drawTreemap(tm, label_size = 1, color_type = "categorical", label_ratio_format = "%.1f%%")
 #'
 #' # plot treemap with each cell colored by name, but larger cells
 #' # lighter and smaller cells darker
-#' drawTreemap(tm, label_size = 1, color_type = "both")
+#' drawTreemap(tm, label_size = 1, color_type = "both", label_ratio_format = "%.1f%%")
 #'
 #' # plot treemap with different color palette and style
 #' drawTreemap(tm, label_size = 1, label_color = grey(0.3),
-#'             border_color = grey(0.3), color_palette = heat.colors(6)
+#'             border_color = grey(0.3), color_palette = heat.colors(6),
+#'             label_ratio_format = "%.1f%%"
 #' )
 #'
 #' @importFrom Rcpp evalCpp
@@ -143,48 +145,75 @@
 voronoiTreemap <- function(
   data,
   levels,
-  fun = sum,
-  sort = TRUE,
-  filter = 0,
-  cell_size = NULL,
-  custom_color = NULL,
-  shape = "rectangle",
-  maxIteration = 100,
-  error_tol = 0.01,
-  convergence = "intermediate",
-  seed = NULL,
+  cell_size,
+  shape = "rect",
   positioning = "regular",
-  verbose = FALSE,
-  debug = FALSE
+  error_tol = 0.01,
+  maxIteration = 200,
+  verbose = FALSE
 ) {
+  # 入力データの検証
+  validate_input(data, levels, cell_size)
 
-  # 入力データのバリデーション（既存のまま）
-  data <- validate_input(
-    data, levels, fun,
-    sort, filter, cell_size,
-    custom_color, verbose)
+  # データを変換
+  input <- convertInput(data, levels, cell_size)
 
-  # デバッグモードの設定（既存のまま）
-  if (debug) {
-    grid::grid.newpage()
-    grid::pushViewport(grid::viewport(
-      width = 0.9,
-      height = 0.9,
-      xscale = c(0, 2000),
-      yscale = c(0, 2000)
-    ))
+  # ツリーマップの生成
+  result <- cropped_voronoi(input, shape, positioning, error_tol, maxIteration, verbose)
+
+  # 結果をクラスに格納
+  result <- voronoiResult(
+    cells = result$cells,
+    levels = levels,
+    cell_size = cell_size,
+    shape = shape,
+    positioning = positioning,
+    error = result$error,
+    iterations = result$iterations
+  )
+
+  # ratio を cells に追加（データフレームから取得）
+  if ("ratio" %in% names(data)) {
+    # データの順序を levels と cell_size に基づいて調整
+    data_ordered <- data %>%
+      arrange(across(all_of(levels)), .by_group = TRUE) %>%
+      mutate(row_id = row_number())
+
+    # result@cells の順序を levels に基づいて調整
+    cell_names <- sapply(result@cells, function(cell) cell$name)
+    cell_order <- order(match(cell_names, unique(data[[levels[length(levels)]]))))
+
+    # ratio を正しくマッピング
+    if (length(cell_order) == nrow(data_ordered)) {
+      for (i in seq_along(result@cells)) {
+        cell_idx <- cell_order[i]
+        result@cells[[i]]$ratio <- data_ordered$ratio[cell_idx]
+      }
+    } else {
+      warning("Mismatch between data rows and generated cells. Ratio assignment may be incorrect.")
+    }
+  } else {
+    warning("No 'ratio' column found in data. Skipping ratio assignment.")
   }
 
-  # コア関数（再帰処理）
+  return(result)
+}
+
+  # CORE FUNCTION (RECURSIVE)
   voronoi_core <- function(level, df, parent = NULL, output = list()) {
 
-    # 最大試行回数のカウンタ（既存のまま）
+    # set counter for number of maximum tries to not get stuck
+    # in repeat loop
     counter = 1
 
     repeat {
 
-      # 境界ポリゴンの定義（既存のまま）
+      # CREATE VORONOI TREEMAP OBJECT
+      #
+      # 1. define the boundary polygon
+      # either predefined rectangular bounding box for 1st level
       if (level == 1) {
+
         if (is.list(shape)) {
           ParentPoly <- poly_transform_shape(shape)
         } else {
@@ -212,16 +241,24 @@ voronoiTreemap <- function(
             stop("shape is not a coordinate list, nor one of 'rectangle', 'rounded_rect', circle', or 'hexagon'.")
           }
         }
+
+        # turn boundary polygon into sf polygon object for treemap generation
         sfpoly <- to_sfpoly(ParentPoly)
+
       } else {
+
+        # or the parental polygon in case of all lower levels > 1
         stopifnot(!is.null(parent))
         sfpoly <- parent
         ParentPoly <- list(x = parent[[1]][, 1], y = parent[[1]][, 2])
+
       }
 
-      # 開始座標の生成（既存のまま）
+      # 2. generate starting coordinates within the boundary polygon
+      # using sp package's spsample function.
       ncells <- tibble::deframe(dplyr::count(df, get(levels[level])))
 
+      # positioning can be defined globally or for each level independently
       positioning <- ifelse(
         length(positioning) == 1,
         positioning,
@@ -237,23 +274,29 @@ voronoiTreemap <- function(
         )
       }
 
-      # ウェイトの生成（既存のまま）
+      # 3. generate the weights, these are the (aggregated) scaling factors
+      # supplied by the user or simply the n members per cell
       if (is.null(cell_size)) {
+        # average cell size by number of members, if no function is given
         weights <- ncells / sum(ncells)
       } else {
+        # average cell size by user defined function, e.g. sum of expression values
+        # the cell size is calculated as aggregated relative fraction of total
         stopifnot(is.numeric(df[[cell_size]]))
         weights <- df %>%
           dplyr::group_by(get(levels[level])) %>%
           dplyr::summarise(fun(get(cell_size)))
         weights <- weights[[2]]/sum(weights[[2]])
       }
-
+      # reorder starting coordinate positions by weights (= target cell areas)
+      # if sorting by area is toggled
       if (length(ncells) != 1 &
           positioning %in% c("regular_by_area", "clustered_by_area")) {
         sampledPoints <- sampledPoints[order(order(weights)), ]
       }
 
-      # カスタムカラーの生成（既存のまま）
+      # 4. generate custom color values for each cell that can be used
+      # with different palettes when drawing;
       if (!is.null(custom_color)) {
         color_value <- df %>%
           dplyr::group_by(get(levels[level])) %>%
@@ -262,8 +305,13 @@ voronoiTreemap <- function(
         color_value <- setNames(color_value, names(ncells))
       }
 
-      # ボロノイテッセレーションの生成（既存のまま）
+      # 5. generate additively weighted voronoi treemap object;
+      # the allocate function returns a list of polygons to draw,
+      # among others.
+      # if the parent has only 1 child, skip map generation
+      # and make pseudo treemap object instead
       if (length(ncells) == 1) {
+
         treemap <- list(list(
           name = names(ncells),
           poly = sfpoly,
@@ -274,7 +322,9 @@ voronoiTreemap <- function(
           count = 0
         ))
         names(treemap) <- names(ncells)[1]
+
       } else {
+
         treemap <- allocate(
           names = names(ncells),
           s = list(
@@ -289,6 +339,8 @@ voronoiTreemap <- function(
           debug = debug
         )
 
+        # error handling in case of failed tesselation:
+        # try up to ten new random starting positions before finally giving up
         if (is.null(treemap) & counter < 10) {
           if (!is.null(seed)) {seed = seed + 1}
           counter = counter + 1
@@ -298,6 +350,7 @@ voronoiTreemap <- function(
           stop("Iteration failed after 10 randomisation trials, try to rerun treemap with new seed")
         }
 
+        # print summary of cell tesselation
         if (debug || verbose) {
           tessErr <- sapply(treemap, function(tm) tm$area)
           tessErr <- abs(tessErr/sum(tessErr) - weights)
@@ -307,73 +360,8 @@ voronoiTreemap <- function(
             treemap[[1]]$count, " iterations."
           )
         }
+
       }
 
-      # 構成比の追加（ここが新たに追加される部分）
-      for (i in names(ncells)) {
-        treemap[[i]]$level <- level
-        treemap[[i]]$custom_color <- {if (!is.null(custom_color))
-          color_value[[i]] else NA}
-        
-        # 構成比の保存
-        cluster_name <- names(ncells)[i]
-        if (level == 1) {  # レベル1はsecondary_cluster_nameに対応
-          treemap[[i]]$ratio <- df$secondary_cluster_ratio[df$secondary_cluster_name == cluster_name][1]
-        } else if (level == 2) {  # レベル2はprimary_cluster_nameに対応
-          treemap[[i]]$ratio <- df$primary_cluster_ratio[df$primary_cluster_name == cluster_name][1]
-        } else {
-          treemap[[i]]$ratio <- NA  # それ以降のレベルはNA（必要に応じて調整）
-        }
-      }
-
-      # 再帰呼び出し（既存のまま）
-      if (level != length(levels)) {
-        res <- lapply(1:length(ncells), function(i) {
-          voronoi_core(
-            level = level + 1,
-            df = subset(df, get(levels[level]) %in% names(ncells)[i]),
-            parent = treemap[[i]]$poly,
-            output = {
-              output[[paste0("LEVEL", level, "_", names(ncells)[i])]] <- treemap[[i]]
-              output
-            }
-          )
-        }) %>%
-        unlist(recursive = FALSE)
-        return(res)
-      } else {
-        names(treemap) <- paste0("LEVEL", level, "_", names(ncells))
-        return(c(output, treemap))
-      }
-    }
-  }
-
-  # メイン関数呼び出し（既存のまま）
-  tm <- voronoi_core(level = 1, df = data)
-  tm <- tm[!duplicated(tm)]
-  tm <- tm[names(tm) %>% order]
-  if (debug || verbose) {
-    message("Treemap successfully created.")
-  }
-
-  # S4クラスの設定と結果の返却（既存のまま）
-  tm <- voronoiResult(
-    cells = tm,
-    data = data,
-    call = list(
-      levels = levels,
-      fun = fun,
-      sort = sort,
-      filter = filter,
-      cell_size = cell_size,
-      custom_color = custom_color,
-      shape = shape,
-      maxIteration = maxIteration,
-      error_tol = error_tol,
-      seed = seed,
-      positioning = positioning
-    )
-  )
-
-  return(tm)
-}
+      # add level and custom color info to treemap
+      for (i in names(n

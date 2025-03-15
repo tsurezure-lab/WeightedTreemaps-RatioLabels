@@ -130,48 +130,46 @@ draw_sector <- function(
 }
 
 # drawUtils.R の draw_label_voronoi 関数を修正
-draw_label_voronoi <- function(
-  cells,
-  label_level,
-  label_size,
-  label_color,
-  label_autoscale
-) {
-  for (tm_slot in rev(cells)) {
-    if (tm_slot$level %in% label_level) {
-      # ラベルサイズの決定
-      if (label_autoscale) {
-        label_cex <- sqrt(tm_slot$area) / (100 * nchar(tm_slot$name)) %>% round(1)
-      } else {
-        label_cex <- 0.5
+draw_label_voronoi <- function(cells, levels, size, color, autoscale, label_ratio_format = "%.1f%%") {
+  lapply(cells, function(tm_slot) {
+    if (tm_slot$level %in% levels) {
+      level_idx <- which(levels == tm_slot$level)
+      label_size <- if (length(size) > 1) size[level_idx] else size
+      label_color <- if (length(color) > 1) color[level_idx] else color
+
+      # ポリゴンデータの確認
+      if (is.null(tm_slot$poly$x) || length(tm_slot$poly$x) == 0) {
+        warning("Invalid polygon data for cell: ", tm_slot$name)
+        return(NULL)
       }
 
-      if (length(label_size) == 1) {
-        label_cex <- label_cex * label_size
-      } else {
-        label_cex <- label_cex * label_size[which(label_level %in% tm_slot$level)]
+      # ラベル名
+      label <- tm_slot$name
+      # 構成比の追加
+      if (!is.null(label_ratio_format) && !is.null(tm_slot$ratio) && !is.na(tm_slot$ratio)) {
+        ratio_text <- sprintf(label_ratio_format, tm_slot$ratio)
+        label <- paste(label, ratio_text, sep = "\n")  # 2行表示
       }
 
-      # ラベル色の決定
-      if (length(label_color) == 1) {
-        label_col <- label_color
-      } else {
-        label_col <- label_color[which(label_level %in% tm_slot$level)]
+      # ラベルの描画位置
+      centroid <- tm_slot$site
+      x <- centroid[1]
+      y <- centroid[2]
+
+      # オートスケーリング
+      if (autoscale) {
+        width <- max(tm_slot$poly$x) - min(tm_slot$poly$x)
+        label_size <- label_size * width / strwidth(label, units = "user")
       }
 
-      # 構成比を追加したラベルテキスト（2行表示）
-      label_text <- paste0(tm_slot$name, "\n", sprintf("%.1f%%", tm_slot$ratio))
-
-      # ラベルの描画（2行表示を考慮して位置を調整）
       grid::grid.text(
-        label_text,
-        tm_slot$site[1],
-        tm_slot$site[2],
-        default = "native",
-        gp = gpar(cex = label_cex, col = label_col, lineheight = 0.8)  # 行間を調整
+        label,
+        x = unit(x, "native"),
+        y = unit(y, "native"),
+        gp = grid::gpar(fontsize = label_size, col = label_color, fontfamily = "zenmaru")
       )
     }
-  }
+  }) %>% invisible
 }
 
 

@@ -126,8 +126,11 @@ draw_sector <- function(
   )
 }
 
-# draw_label_voronoi 関数（Voronoiツリーマップ用のラベル描画）
-draw_label_voronoi <- function(cells, levels, size, color, autoscale, label_ratio_format = "%.1f%%", fontfamily = "zenmaru") {
+# draw_label_voronoi 関数（Voronoiツリーマップ用のラベル描画）　#', fontfamily = "sans"'
+draw_label_voronoi <- function(cells, levels, size, color, autoscale, label_ratio_format = "%.1f%%") {
+  grid::grid.newpage()
+  grid::pushViewport(viewport(xscale = c(0, 2000), yscale = c(0, 2000)))
+  
   lapply(cells, function(tm_slot) {
     if (tm_slot$level %in% levels) {
       level_idx <- which(levels == tm_slot$level)
@@ -152,35 +155,42 @@ draw_label_voronoi <- function(cells, levels, size, color, autoscale, label_rati
         label <- paste(label, ratio_text, sep = "\n")  # 2行表示
       }
 
-      # ラベルの描画位置（サイトの中心）
+      # ラベルの描画位置（サイトの中心、正規化）
       centroid <- tm_slot$site
-      x <- centroid[1]
-      y <- centroid[2]
+      x <- centroid[1] / 2000  # 0〜1に正規化
+      y <- centroid[2] / 2000  # 0〜1に正規化
 
-      # オートスケーリング
+      # オートスケーリング（簡易調整）
       if (autoscale) {
         if (length(tm_slot$poly$x) > 1) {
-          width <- max(tm_slot$poly$x) - min(tm_slot$poly$x)
-          label_size <- label_size * width / strwidth(label, units = "user", cex = label_size)
+          width <- (max(tm_slot$poly$x) - min(tm_slot$poly$x)) / 2000  # 0〜1に正規化
+          cat("Cell:", tm_slot$name, "Width:", width, "\n")
+          label_size <- min(max(label_size * width / (nchar(label) * 0.05), 1), 10)  # サイズ調整
         } else {
           warning("Insufficient polygon data for autoscale in cell: ", tm_slot$name)
-          label_size <- label_size  # デフォルトサイズを使用
+          label_size <- min(max(label_size, 1), 10)  # デフォルトサイズ
         }
+      } else {
+        label_size <- min(max(label_size, 1), 10)  # デフォルトサイズ
       }
+
+      cat("Label drawn for:", tm_slot$name, "at (", x, ",", y, ") with size", label_size, "\n")
 
       grid::grid.text(
         label,
-        x = unit(x, "native"),
-        y = unit(y, "native"),
+        x = unit(x, "npc"),  # NPC単位を使用
+        y = unit(y, "npc"),  # NPC単位を使用
         gp = grid::gpar(
           fontsize = label_size,
           col = label_color,
           fontfamily = fontfamily,
-          lineheight = 0.8  # 2行表示時の行間調整
+          lineheight = 0.8
         )
       )
     }
   }) %>% invisible
+  
+  grid::popViewport()
 }
 
 # draw_label_sunburst 関数（Sunburstツリーマップ用のラベル描画）

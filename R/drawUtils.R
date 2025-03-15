@@ -82,10 +82,9 @@ drawRegions <- function(
   )
 
   if (label) {
-
     # function to determine label sizes for each individual cell
     # based on cell dimension and label character length
-    cex = sqrt(unlist(result$a)) * 0.01 / nchar(names)  %>%
+    cex = sqrt(unlist(result$a)) * 0.01 / nchar(names) %>%
       round(1)
     grid::grid.text(names,
       sites$x,
@@ -93,7 +92,6 @@ drawRegions <- function(
       default = "native",
       gp = gpar(cex = cex, col = label.col)
     )
-
   }
 }
 
@@ -126,64 +124,78 @@ draw_sector <- function(
     level = level,
     custom_color = custom_color
   )
-
 }
 
-# drawUtils.R の draw_label_voronoi 関数を修正
-draw_label_voronoi <- function(cells, levels, size, color, autoscale, label_ratio_format = "%.1f%%") {
+# draw_label_voronoi 関数（Voronoiツリーマップ用のラベル描画）
+draw_label_voronoi <- function(cells, levels, size, color, autoscale, label_ratio_format = "%.1f%%", fontfamily = "zenmaru") {
   lapply(cells, function(tm_slot) {
     if (tm_slot$level %in% levels) {
       level_idx <- which(levels == tm_slot$level)
       label_size <- if (length(size) > 1) size[level_idx] else size
       label_color <- if (length(color) > 1) color[level_idx] else color
 
-      # ポリゴンデータの確認
-      if (is.null(tm_slot$poly$x) || length(tm_slot$poly$x) == 0) {
+      # ポリゴンデータとサイトデータの存在確認
+      if (is.null(tm_slot$poly) || is.null(tm_slot$poly$x) || length(tm_slot$poly$x) == 0) {
         warning("Invalid polygon data for cell: ", tm_slot$name)
+        return(NULL)
+      }
+      if (is.null(tm_slot$site) || length(tm_slot$site) < 2) {
+        warning("Invalid site data for cell: ", tm_slot$name)
         return(NULL)
       }
 
       # ラベル名
       label <- tm_slot$name
-      # 構成比の追加
+      # 構成比の追加（ratioが存在する場合）
       if (!is.null(label_ratio_format) && !is.null(tm_slot$ratio) && !is.na(tm_slot$ratio)) {
-        ratio_text <- sprintf(label_ratio_format, tm_slot$ratio)
+        ratio_text <- sprintf(label_ratio_format, tm_slot$ratio * 100)  # パーセントに変換
         label <- paste(label, ratio_text, sep = "\n")  # 2行表示
       }
 
-      # ラベルの描画位置
+      # ラベルの描画位置（サイトの中心）
       centroid <- tm_slot$site
       x <- centroid[1]
       y <- centroid[2]
 
       # オートスケーリング
       if (autoscale) {
-        width <- max(tm_slot$poly$x) - min(tm_slot$poly$x)
-        label_size <- label_size * width / strwidth(label, units = "user")
+        if (length(tm_slot$poly$x) > 1) {
+          width <- max(tm_slot$poly$x) - min(tm_slot$poly$x)
+          label_size <- label_size * width / strwidth(label, units = "user", cex = label_size)
+        } else {
+          warning("Insufficient polygon data for autoscale in cell: ", tm_slot$name)
+          label_size <- label_size  # デフォルトサイズを使用
+        }
       }
 
       grid::grid.text(
         label,
         x = unit(x, "native"),
         y = unit(y, "native"),
-        gp = grid::gpar(fontsize = label_size, col = label_color, fontfamily = "zenmaru")
+        gp = grid::gpar(
+          fontsize = label_size,
+          col = label_color,
+          fontfamily = fontfamily,
+          lineheight = 0.8  # 2行表示時の行間調整
+        )
       )
     }
   }) %>% invisible
 }
 
-
-# drawUtils.R の draw_label_sunburst 関数を修正
+# draw_label_sunburst 関数（Sunburstツリーマップ用のラベル描画）
 draw_label_sunburst <- function(
   cells,
   label_level,
   label_size,
   label_color,
-  diameter
+  diameter,
+  label_ratio_format = "%.1f%%",
+  fontfamily = "zenmaru"
 ) {
   lapply(cells, function(tm_slot) {
     if (tm_slot$level %in% label_level) {
-      # ラベルサイズと色の決定（既存のコード）
+      # ラベルサイズと色の決定
       if (length(label_size) > 1) {
         label_cex <- label_size[1]
         warning("'label_size' should only have length 1. Using first argument.")
@@ -198,20 +210,24 @@ draw_label_sunburst <- function(
         label_col <- label_color
       }
 
-      # セクターの角度計算（既存のコード）
+      # セクターの角度計算
       segment <- c(tm_slot$lower_bound, tm_slot$upper_bound) * 2 * pi
       z <- seq(segment[1], segment[2], by = pi/400)
       if (diameter * cos(stats::median(z)) >= 0) side = 1 else side = -1
-      sinz <- sin(median(z))
-      cosz <- cos(median(z))
+      sinz <- sin(stats::median(z))
+      cosz <- cos(stats::median(z))
       d1 <- diameter + 0.02
       d2 <- diameter + 0.05
       d3 <- diameter + 0.10
 
-      # 構成比を追加したラベルテキスト（2行表示）
-      label_text <- paste0(substr(tm_slot$name, 1, 18), "\n", sprintf("%.1f%%", tm_slot$ratio))
+      # ラベルテキスト（クラスター名と構成比を2行表示）
+      label_text <- tm_slot$name
+      if (!is.null(label_ratio_format) && !is.null(tm_slot$ratio) && !is.na(tm_slot$ratio)) {
+        ratio_text <- sprintf(label_ratio_format, tm_slot$ratio * 100)  # パーセントに変換
+        label_text <- paste(substr(label_text, 1, 18), ratio_text, sep = "\n")  # 2行表示、名前を18文字に制限
+      }
 
-      # ラベル用の円弧と線の描画（既存のコード）
+      # ラベル用の円弧と線の描画
       z <- z[-c(1, length(z))]
       grid::grid.lines(
         (c(d1 * cos(z[1]), d2 * cos(z), d1 * cos(tail(z, 1))) + 1) * 1000,
@@ -235,12 +251,16 @@ draw_label_sunburst <- function(
         y = ((d2 * sinz + 0.15 * sinz * abs(sinz)) + 1) * 1000,
         just = ifelse(side == 1, "left", "right"),
         default.units = "native",
-        gp = gpar(cex = label_cex, col = label_col, lineheight = 0.8)  # 行間を調整
+        gp = gpar(
+          cex = label_cex,
+          col = label_col,
+          fontfamily = fontfamily,
+          lineheight = 0.8  # 2行表示時の行間調整
+        )
       )
     }
   }) %>% invisible
 }
-
 
 # function to add colors to a treemap object
 add_color <- function(treemap, color_palette = NULL,

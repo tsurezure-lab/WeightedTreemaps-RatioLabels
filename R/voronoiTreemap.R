@@ -232,23 +232,29 @@ voronoiTreemap <- function(
     # primary_cluster_nameごとにprimary_cluster_ratioを一意にマッピング
     primary_ratios <- data %>%
       group_by(!!sym(level2)) %>%
-      summarise(ratio = mean(primary_cluster_ratio, na.rm = TRUE)) %>%
+      summarise(ratio = first(primary_cluster_ratio),  # 最初の値を採用
+                total_count = sum(count)) %>%
       distinct()
     ratio_map_primary <- setNames(primary_ratios$ratio, primary_ratios[[level2]])
     
-    # secondary_cluster_nameごとにsecondary_cluster_ratioを一意にマッピング
+    # secondary_cluster_name内でprimary_cluster_nameの割合を再計算
     secondary_ratios <- data %>%
+      group_by(!!sym(level1), !!sym(level2)) %>%
+      summarise(secondary_ratio = first(secondary_cluster_ratio),
+                sub_count = sum(count)) %>%
       group_by(!!sym(level1)) %>%
-      summarise(ratio = mean(secondary_cluster_ratio, na.rm = TRUE)) %>%
-      distinct()
+      mutate(total_count = sum(sub_count),
+             ratio = (sub_count / total_count) * 100) %>%
+      distinct() %>%
+      select(!!sym(level1), ratio)
     ratio_map_secondary <- setNames(secondary_ratios$ratio, secondary_ratios[[level1]])
     
     tm@cells <- lapply(tm@cells, function(tm_slot) {
       cell_name <- tm_slot$name
       if (tm_slot$level == 1) {
-        tm_slot$ratio <- ratio_map_primary[cell_name]
-      } else if (tm_slot$level == 2) {
         tm_slot$ratio <- ratio_map_secondary[cell_name]
+      } else if (tm_slot$level == 2) {
+        tm_slot$ratio <- ratio_map_primary[cell_name]
       }
       if (is.na(tm_slot$ratio)) {
         warning(paste("No ratio found for", cell_name, "- setting to NA"))

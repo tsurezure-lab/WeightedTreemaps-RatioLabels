@@ -226,10 +226,23 @@ voronoiTreemap <- function(
 
   # 構成比の追加（S4クラス変換後）
   if (all(c("primary_cluster_ratio", "secondary_cluster_ratio") %in% names(data))) {
-    level1 <- levels[1]
-    level2 <- levels[2]
-    ratio_map_primary <- setNames(data$primary_cluster_ratio, data[[level2]])
-    ratio_map_secondary <- setNames(data$secondary_cluster_ratio, data[[level1]])
+    level1 <- levels[1]  # "secondary_cluster_name"
+    level2 <- levels[2]  # "primary_cluster_name"
+    
+    # primary_cluster_nameごとにprimary_cluster_ratioを一意にマッピング
+    primary_ratios <- data %>%
+      group_by(!!sym(level2)) %>%
+      summarise(ratio = mean(primary_cluster_ratio, na.rm = TRUE)) %>%
+      distinct()
+    ratio_map_primary <- setNames(primary_ratios$ratio, primary_ratios[[level2]])
+    
+    # secondary_cluster_nameごとにsecondary_cluster_ratioを一意にマッピング
+    secondary_ratios <- data %>%
+      group_by(!!sym(level1)) %>%
+      summarise(ratio = mean(secondary_cluster_ratio, na.rm = TRUE)) %>%
+      distinct()
+    ratio_map_secondary <- setNames(secondary_ratios$ratio, secondary_ratios[[level1]])
+    
     tm@cells <- lapply(tm@cells, function(tm_slot) {
       cell_name <- tm_slot$name
       if (tm_slot$level == 1) {
@@ -246,3 +259,21 @@ voronoiTreemap <- function(
 
   return(tm)
 }
+
+#' @importFrom Rcpp evalCpp
+#' @importFrom grid grid.newpage
+#' @importFrom grid pushViewport
+#' @importFrom grid viewport
+#' @importFrom dplyr %>%
+#' @importFrom dplyr mutate_if
+#' @importFrom dplyr group_by
+#' @importFrom dplyr summarise
+#' @importFrom dplyr count
+#' @importFrom tibble deframe
+#' @importFrom scales rescale
+#' @importFrom sf st_polygon
+#' @importFrom sf st_area
+#' @importFrom sp Polygon
+#' @importFrom sp spsample
+#'
+#' @useDynLib WeightedTreemaps, .registration = TRUE

@@ -144,10 +144,10 @@ voronoiTreemap <- function(
   data,
   levels,
   cell_size,
-  shape = "rounded_rect",  # デフォルトを rounded_rect に復元
+  shape = "rounded_rect",
   positioning = "regular",
-  error_tol = 0.05,  # 収束を改善するためにデフォルトを 0.05 に
-  maxIteration = 200,  # 収束を改善するためにデフォルトを 200 に
+  error_tol = 0.2,  # 緩和
+  maxIteration = 400,  # 増やす
   verbose = FALSE
 ) {
   # 入力データの検証
@@ -172,35 +172,22 @@ voronoiTreemap <- function(
 
   # ratio を cells に追加（データフレームから取得）
   if ("ratio" %in% names(data)) {
-    # levels から列名を取得
-    level1 <- levels[1]  # 例: "secondary_cluster_name"
-    level2 <- levels[2]  # 例: "primary_cluster_name"
-    
-    # クラスタ名と ratio をマッピング
-    # NA や重複を考慮して一意のキーを生成
-    ratio_data <- data[!duplicated(data[[level1]]), ]  # レベル1で重複を削除
-    ratio_map <- setNames(ratio_data$ratio, ratio_data[[level1]])
-    if (length(levels) > 1) {
-      for (i in seq_along(result@cells)) {
-        cell_name <- result@cells[[i]]$name
-        if (result@cells[[i]]$level == 2) {
-          parent_name <- names(result@cells)[i]  # 親クラスタ名
-          cell_key <- paste(cell_name, parent_name, sep = "_")
-          # レベル2では親の ratio を継承
-          result@cells[[i]]$ratio <- ratio_map[parent_name]
-        } else {
-          cell_key <- cell_name
-          result@cells[[i]]$ratio <- ratio_map[cell_name]
-        }
+    level1 <- levels[1]  # "secondary_cluster_name"
+    level2 <- levels[2]  # "primary_cluster_name"
+    # 階層構造を考慮したキーを作成
+    ratio_map <- setNames(data$ratio, paste(data[[level1]], data[[level2]], sep = "_"))
+    for (i in seq_along(result@cells)) {
+      cell_name <- result@cells[[i]]$name
+      if (result@cells[[i]]$level == 2) {
+        parent_name <- sub("^LEVEL1_", "", names(result@cells)[i])  # "LEVEL1_" を削除
+        cell_key <- paste(parent_name, cell_name, sep = "_")  # 親-子ペア
+      } else {
+        cell_key <- paste0("LEVEL1_", cell_name)  # レベル 1 の場合
       }
-    } else {
-      for (i in seq_along(result@cells)) {
-        cell_name <- result@cells[[i]]$name
-        result@cells[[i]]$ratio <- ratio_map[cell_name]
-      }
+      # ratio_map から値を取得、なければ NA を設定
+      result@cells[[i]]$ratio <- ratio_map[cell_key]
     }
   }
-
   return(result)
 }
 

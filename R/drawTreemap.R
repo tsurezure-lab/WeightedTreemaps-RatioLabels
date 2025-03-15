@@ -299,15 +299,19 @@ drawTreemap <- function(
     }) %>% invisible
   }
 
+# ... (drawTreemap 関数の既存のコード) ...
+
   # DRAWING LABELS
   if (
     !is.null(label_level) &
     !is.null(label_size) &
     !is.null(label_color)
   ) {
+
     # two possible options: labels for voronoi treemaps
     # and labels for sunburst treemaps
     if (inherits(treemap, "sunburstResult")) {
+
       if (length(label_level) > 1) {
         stop("'label_level' should only have length 1 (labels for one level only)")
       } else {
@@ -316,21 +320,33 @@ drawTreemap <- function(
           treemap@call$diameter_outer
         )
       }
+
     } else {
-      # Set default label_ratio_size and label_ratio_color if not provided
-      if (is.null(label_ratio_size)) {
-        label_ratio_size <- label_size * 0.8  # クラスタ名の0.8倍（既存のデフォルトに合わせる）
-      }
-      if (is.null(label_ratio_color)) {
-        label_ratio_color <- adjustcolor(label_color, alpha.f = 0.7)  # 透明度を追加
+      # 比率ラベルの準備 (追加)
+      ratio_labels <- list()
+      if(all(c("primary_cluster_name", "secondary_cluster_name",
+               "primary_cluster_ratio", "secondary_cluster_ratio") %in% colnames(treemap@data))){
+        for (cell_name in names(treemap@cells)) {
+          level <- treemap@cells[[cell_name]]$level
+          if(level == 1){
+            ratio <- treemap@data$secondary_cluster_ratio[treemap@data$secondary_cluster_name == cell_name]
+            ratio_labels[[cell_name]] <- paste0(round(ratio, 1), "%")
+          } else if (level == 2){
+            ratio <- treemap@data$primary_cluster_ratio[treemap@data$primary_cluster_name == cell_name]
+             ratio_labels[[cell_name]] <- paste0(round(ratio, 1), "%")
+          }
+        }
       }
 
       draw_label_voronoi(
         treemap@cells, label_level, label_size, label_color, label_autoscale,
-        label_ratio_size, label_ratio_color
+        ratio_labels = ratio_labels # 追加
       )
     }
+
   }
+
+# ... (drawTreemap 関数の既存のコード) ...
 
   # DRAW OPTIONAL TITLE
   if (!is.null(title)) {

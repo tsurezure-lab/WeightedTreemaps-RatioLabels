@@ -363,5 +363,78 @@ voronoiTreemap <- function(
 
       }
 
+
       # add level and custom color info to treemap
-      for (i in names(n
+      for (i in names(ncells)) {
+        treemap[[i]]$level <- level
+        treemap[[i]]$custom_color <- {if (!is.null(custom_color))
+          color_value[[i]] else NA}
+      }
+
+
+      # CALL CORE FUNCTION RECURSIVELY
+      if (level != length(levels)) {
+
+        # iterate through all possible sub-categories,
+        # these are the children of the parental polygon
+        # and pass the children's polygon as new parental
+        # also add current tesselation results to output list
+        res <- lapply(1:length(ncells), function(i) {
+
+          voronoi_core(
+            level = level + 1,
+            df = subset(df, get(levels[level]) %in% names(ncells)[i]),
+            parent = treemap[[i]]$poly,
+            output = {
+              output[[paste0("LEVEL", level, "_", names(ncells)[i])]] <- treemap[[i]]
+              output
+            }
+          )
+        }) %>%
+        unlist(recursive = FALSE)
+        return(res)
+
+      } else {
+
+        names(treemap) <- paste0("LEVEL", level, "_", names(ncells))
+        return(c(output, treemap))
+
+      }
+    }
+  }
+
+  # MAIN FUNCTION CALL
+  # ------------------
+  # iterate through all levels,
+  # collect results in list, remove duplicated polygons
+  # and order by hierarchical level
+  tm <- voronoi_core(level = 1, df = data)
+  tm <- tm[!duplicated(tm)]
+  tm <- tm[names(tm) %>% order]
+  if (debug || verbose) {
+    message("Treemap successfully created.")
+  }
+
+
+  # set S4 class and return result
+  tm <- voronoiResult(
+    cells = tm,
+    data = data,
+    call = list(
+      levels = levels,
+      fun = fun,
+      sort = sort,
+      filter = filter,
+      cell_size = cell_size,
+      custom_color = custom_color,
+      shape = shape,
+      maxIteration = maxIteration,
+      error_tol = error_tol,
+      seed = seed,
+      positioning = positioning
+    )
+  )
+
+  return(tm)
+
+}

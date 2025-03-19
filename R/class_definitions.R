@@ -13,9 +13,10 @@ sunburstResult <- setClass("sunburstResult",
 voronoiResult <- setClass("voronoiResult",
   contains = "list",
   slots = c(
-   cells = "list",
-   data = "data.frame",
-   call = "list"
+    cells = "list",
+    data = "data.frame",
+    call = "list",
+    label_ratios = "data.frame"  # 追加したスロット
   )
 )
 

@@ -43,7 +43,10 @@ Imports:
     scales,
     sf,
     sp,
-    tibble
+    tibble,
+    grDevices,
+    stats,
+    utils
 Suggests:
     knitr,
     parallel,

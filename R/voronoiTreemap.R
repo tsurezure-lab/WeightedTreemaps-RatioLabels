@@ -33,6 +33,8 @@
 #'   \code{levels} or \code{cell size}. Any other data source that shall be used
 #'   instead has to be included in the treemap generation and explicitly
 #'   specified here. The default value is \code{NULL}.
+#' @param label_ratios (character) Optional column names for ratio labels (e.g., "primary_cluster_ratio", "secondary_cluster_ratio").
+#'   These ratios will be stored in the treemap object for use in drawing labels.
 #' @param shape (list or character) Set the initial shape of the treemap. Currently
 #'   supported are the keywords "rectangle", "rounded_rect", "circle" or "hexagon".
 #'   Alternatively the user can supply a named list with coordinates for a custom polygon.
@@ -46,8 +48,8 @@
 #' @param error_tol (numeric) The allowed maximum error tolerance of a cell.
 #'   The algorithm will stop when all cells have lower error than this value.
 #'   It is calculated as the absolute difference of a cell's area to its target
-#'   area. The default is 0.01 (or 1 \%) of the total parental area. Note: this
-#'   is is different from a relative per-cell error, where 1 \% would be more
+#'   area. The default is 0.01 (or 1 %) of the total parental area. Note: this
+#'   is is different from a relative per-cell error, where 1 % would be more
 #'   strict.
 #' @param convergence (character) One of "slow", "intermediate", or "fast".
 #'   Intermediate (default) and fast try to adjust cell weights stronger such
@@ -84,6 +86,7 @@
 #'     \item{cells}{`list` of polygons for drawing a treemap}
 #'     \item{data}{`data.frame`, the original data that was supplied to calling `voronoiTreemap`}
 #'     \item{call}{`list` of arguments used to call `voronoiTreemap`}
+#'     \item{label_ratios}{`data.frame` or `NULL`, the ratio data for labeling (if specified)}
 #'
 #' @seealso \code{\link{drawTreemap}} for drawing the treemap.
 #'
@@ -95,30 +98,23 @@
 #' df <- data.frame(
 #'   A = rep(c("abcd", "efgh"), each = 4),
 #'   B = letters[1:8],
-#'   size = c(37, 52, 58, 27, 49, 44, 34, 45)
+#'   size = c(37, 52, 58, 27, 49, 44, 34, 45),
+#'   ratio = c(0.1, 0.2, 0.15, 0.05, 0.25, 0.1, 0.05, 0.1)
 #' )
 #'
-#' # compute treemap
+#' # compute treemap with ratio labels
 #' tm <- voronoiTreemap(
 #'   data = df,
-#'   levels = c("B"),
+#'   levels = c("A", "B"),
 #'   cell_size = "size",
 #'   shape = "circle",
 #'   positioning = "regular",
-#'   seed = 123
+#'   seed = 123,
+#'   label_ratios = "ratio"  # Example ratio column
 #' )
 #'
 #' # plot treemap with each cell colored by name (default)
-#' drawTreemap(tm, label_size = 1, color_type = "categorical")
-#'
-#' # plot treemap with each cell colored by name, but larger cells
-#' # lighter and smaller cells darker
-#' drawTreemap(tm, label_size = 1, color_type = "both")
-#'
-#' # plot treemap with different color palette and style
-#' drawTreemap(tm, label_size = 1, label_color = grey(0.3),
-#'             border_color = grey(0.3), color_palette = heat.colors(6)
-#' )
+#' drawTreemap(tm, label_size = 1, color_type = "categorical", label_ratio = TRUE)
 #'
 #' @importFrom Rcpp evalCpp
 #' @importFrom grid grid.newpage
@@ -139,7 +135,7 @@
 #' @useDynLib WeightedTreemaps, .registration = TRUE
 #'
 #' @export voronoiTreemap
-#'
+#' @export
 voronoiTreemap <- function(
   data,
   levels,
@@ -148,6 +144,7 @@ voronoiTreemap <- function(
   filter = 0,
   cell_size = NULL,
   custom_color = NULL,
+  label_ratios = NULL,  # 新しい引数: 構成比ラベル用の列名
   shape = "rectangle",
   maxIteration = 100,
   error_tol = 0.01,
@@ -164,6 +161,33 @@ voronoiTreemap <- function(
     sort, filter, cell_size,
     custom_color, verbose)
 
+# Validate label_ratios
+if (!is.null(label_ratios)) {
+  if (is.character(label_ratios)) {
+    # label_ratios が文字列（列名）の場合
+    if (!all(label_ratios %in% names(data))) {
+      stop("Error: label_ratios must be valid column names in the data frame.")
+    }
+    # Ensure label_ratios are numeric
+    for (col in label_ratios) {
+      if (!is.numeric(data[[col]])) {
+        stop("Error: label_ratios columns must contain numeric data.")
+      }
+    }
+  } else if (is.data.frame(label_ratios)) {
+    # label_ratios がデータフレームの場合
+    if (nrow(label_ratios) != nrow(data)) {
+      stop("Error: label_ratios data frame must have the same number of rows as the input data.")
+    }
+    # Ensure all columns in label_ratios are numeric
+    if (!all(sapply(label_ratios, is.numeric))) {
+      stop("Error: label_ratios data frame must contain only numeric columns.")
+    }
+  } else {
+    stop("Error: label_ratios must be a character vector of column names or a data frame.")
+  }
+}
+
   # in debug mode, open a viewport to draw iterations
   # of treemap generation called from allocate()
   if (debug) {
@@ -175,7 +199,6 @@ voronoiTreemap <- function(
       yscale = c(0, 2000)
     ))
   }
-
 
   # CORE FUNCTION (RECURSIVE)
   voronoi_core <- function(level, df, parent = NULL, output = list()) {
@@ -252,7 +275,6 @@ voronoiTreemap <- function(
         )
       }
 
-
       # 3. generate the weights, these are the (aggregated) scaling factors
       # supplied by the user or simply the n members per cell
       if (is.null(cell_size)) {
@@ -284,7 +306,30 @@ voronoiTreemap <- function(
         color_value <- setNames(color_value, names(ncells))
       }
 
-      # 5. generate additively weighted voronoi treemap object;
+      # 5. generate label ratio values for each cell
+      if (!is.null(label_ratios)) {
+        ratio_values <- list()
+        if (is.character(label_ratios)) {
+          for (ratio_col in label_ratios) {
+            ratio_value <- df %>%
+              dplyr::group_by(get(levels[level])) %>%
+              dplyr::summarise(fun(get(ratio_col)))
+            ratio_value <- setNames(ratio_value[[2]], ratio_value[[1]])
+            ratio_values[[ratio_col]] <- ratio_value
+          }
+        } else if (is.data.frame(label_ratios)) {
+          # データフレームが渡された場合、各列を処理
+          for (ratio_col in names(label_ratios)) {
+            ratio_value <- df %>%
+              dplyr::group_by(get(levels[level])) %>%
+              dplyr::summarise(fun(get(ratio_col)))
+            ratio_value <- setNames(ratio_value[[2]], ratio_value[[1]])
+            ratio_values[[ratio_col]] <- ratio_value
+          }
+        }
+      }
+
+      # 6. generate additively weighted voronoi treemap object;
       # the allocate function returns a list of polygons to draw,
       # among others.
       # if the parent has only 1 child, skip map generation
@@ -342,13 +387,15 @@ voronoiTreemap <- function(
 
       }
 
-      # add level and custom color info to treemap
+      # add level, custom color, and ratio info to treemap
       for (i in names(ncells)) {
         treemap[[i]]$level <- level
         treemap[[i]]$custom_color <- {if (!is.null(custom_color))
           color_value[[i]] else NA}
+        treemap[[i]]$label_ratios <- {if (!is.null(label_ratios)) {
+          sapply(label_ratios, function(ratio_col) ratio_values[[ratio_col]][i])
+        } else NA}
       }
-
 
       # CALL CORE FUNCTION RECURSIVELY
       if (level != length(levels)) {
@@ -393,25 +440,32 @@ voronoiTreemap <- function(
     message("Treemap successfully created.")
   }
 
-
-  # set S4 class and return result
-  tm <- voronoiResult(
-    cells = tm,
-    data = data,
-    call = list(
-      levels = levels,
-      fun = fun,
-      sort = sort,
-      filter = filter,
-      cell_size = cell_size,
-      custom_color = custom_color,
-      shape = shape,
-      maxIteration = maxIteration,
-      error_tol = error_tol,
-      seed = seed,
-      positioning = positioning
-    )
-  )
+# set S4 class and return result
+tm <- voronoiResult(
+  cells = tm,
+  data = data,
+  call = list(
+    levels = levels,
+    fun = fun,
+    sort = sort,
+    filter = filter,
+    cell_size = cell_size,
+    custom_color = custom_color,
+    label_ratios = label_ratios,  # 構成比ラベル情報を保存
+    shape = shape,
+    maxIteration = maxIteration,
+    error_tol = error_tol,
+    seed = seed,
+    positioning = positioning
+  ),
+  label_ratios = if (!is.null(label_ratios)) {
+    if (is.character(label_ratios)) {
+      data[, label_ratios, drop = FALSE]
+    } else if (is.data.frame(label_ratios)) {
+      label_ratios  # データフレームをそのまま使用
+    }
+  } else NULL
+)
 
   return(tm)
 

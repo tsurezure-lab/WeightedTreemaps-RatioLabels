@@ -130,14 +130,14 @@ draw_sector <- function(
 }
 
 # function to draw labels for voronoi treemap
-# function to draw labels for voronoi treemap
 draw_label_voronoi <- function(
   cells,
   label_level,
   label_size,
   label_color,
   label_autoscale,
-  ratio_labels = NULL # 追加: 比率ラベルのリスト
+  ratio_labels = NULL, # 追加: 比率ラベルのリスト
+  label_fontfamily = "sans"
 ) {
 
   for (tm_slot in rev(cells)) {
@@ -172,7 +172,7 @@ draw_label_voronoi <- function(
         tm_slot$site[1],
         tm_slot$site[2],
         default = "native",
-        gp = gpar(cex = label_cex, col = label_col)
+        gp = gpar(cex = label_cex, col = label_col, fontfamily = label_fontfamily) #add fontfamily
       )
 
       # 比率ラベルの描画 (修正: NULLチェックに加えてlengthチェックも行う)
@@ -198,13 +198,14 @@ draw_label_voronoi <- function(
             x_coord, # X座標
             y_coord, # Y座標
             default = "native",
-            gp = gpar(cex = label_cex * 0.7, col = label_col) # 少し小さめのフォント
+            gp = gpar(cex = label_cex * 0.7, col = label_col, fontfamily = label_fontfamily) #add fontfamily
           )
       }
 
     }
   }
 }
+
 
 
 # function to draw labels for sunburst treemap

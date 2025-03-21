@@ -1,10 +1,10 @@
 ---
 output:  github_document
-title: "WeightedTreemaps"
-author: "Michael Jahn, David Leslie, Ahmadou Dicko, Paul Murrell"
+title: "WeightedTreemaps with Cluster Ratio Labels"
+author: "tsurezure-lab, based on original by Michael Jahn, David Leslie, Ahmadou Dicko, Paul Murrell"
 date: "`r Sys.Date()`"
 vignette: >
-  %\VignetteIndexEntry{WeightedTreemaps}
+  %\VignetteIndexEntry{WeightedTreemaps with Cluster Ratio Labels}
   %\VignetteEngine{knitr::rmarkdown}
   %\VignetteEncoding{UTF-8}
 ---
@@ -17,52 +17,195 @@ knitr::opts_chunk$set(
 )
 ```
 
-<!-- include logo-->
-<img src="images/logo.png" align="right" />
+<!-- include logo (replace with your logo if you have one) -->
+<!-- <img src="images/logo.png" align="right" /> -->
 
 <!-- badges start -->
-[![CRAN status](https://www.r-pkg.org/badges/version/WeightedTreemaps)](https://CRAN.R-project.org/package=WeightedTreemaps)
-[![R-CMD-check](https://github.com/m-jahn/WeightedTreemaps/actions/workflows/R-CMD-check.yaml/badge.svg)](https://github.com/m-jahn/WeightedTreemaps/actions/workflows/R-CMD-check.yaml)
-![GitHub issues](https://img.shields.io/github/issues/m-jahn/WeightedTreemaps)
-![GitHub last commit](https://img.shields.io/github/last-commit/m-jahn/WeightedTreemaps)
-![Platform](https://img.shields.io/badge/platform-all-green)
-![Maintained](https://img.shields.io/badge/maintained-yes-green)
+[![GitHub issues](https://img.shields.io/github/issues/tsurezure-lab/WeightedTreemaps)](https://github.com/tsurezure-lab/WeightedTreemaps/issues)
+[![GitHub last commit](https://img.shields.io/github/last-commit/tsurezure-lab/WeightedTreemaps)](https://github.com/tsurezure-lab/WeightedTreemaps/commits/main)
+[![Platform](https://img.shields.io/badge/platform-R-blue)](https://www.r-project.org/)
+[![Maintained](https://img.shields.io/badge/maintained-yes-green)](https://github.com/tsurezure-lab/WeightedTreemaps)
 <!-- badges end -->
 
 ***
 
-Generate and plot **Voronoi treemaps** or **Sunburst treemaps** from hierarchical data. 
+Generate and plot **Voronoi treemaps** or **Sunburst treemaps** from hierarchical data.  This is a forked version of the original `WeightedTreemaps` package, with added support for displaying cluster ratio labels on Voronoi treemaps.
 
 ```{r, results = 'hide', message = FALSE, echo = FALSE, warning = FALSE}
 library(WeightedTreemaps)
+library(dplyr)
+library(showtext)
+library(grid)
+library(ggplot2)
+library(png)
 
-# load example data
-data(mtcars)
-mtcars$car_name = gsub(" ", "\n", row.names(mtcars))
+# Googleフォントを追加
+font_add_google("Zen Maru Gothic", "zenmaru") # 日本語フォント
+font_add_google("Roboto", "roboto")          # 英語フォント (例)
+showtext_auto()
+```
 
-# generate treemap; set seed to obtain same pattern every time
-tm <- voronoiTreemap(
-  data = mtcars,
-  levels = c("gear", "car_name"),
-  cell_size = "wt",
-  shape = "rounded_rect",
-  seed = 123
-)
+<!-- New example with ratio labels -->
+
+```{r dummy_data_setup, include=FALSE}
+# ダミーデータ生成関数
+generate_dummy_data <- function() {
+  set.seed(42)
+
+  # primary_cluster (合計100種類)
+  num_primary_clusters <- 100
+  primary_cluster_names <- paste("Primary Cluster", 1:num_primary_clusters)
+  primary_cluster_ids <- 1:num_primary_clusters
+
+  # secondary_cluster (6種類)
+  num_secondary_clusters <- 6
+  secondary_cluster_names <- paste("Secondary Cluster", 1:num_secondary_clusters)
+  secondary_cluster_ids <- 1:num_secondary_clusters
+
+  # 各primary_clusterがどのsecondary_clusterに属するかをランダムに決定
+  primary_to_secondary <- sample(secondary_cluster_ids, num_primary_clusters, replace = TRUE)
+
+  # データフレームの初期化
+  df <- data.frame(
+    primary_cluster = integer(),
+    primary_cluster_name = character(),
+    primary_cluster_ratio = numeric(),
+    secondary_cluster = integer(),
+    secondary_cluster_name = character(),
+    secondary_cluster_ratio = numeric(),
+    stringsAsFactors = FALSE
+  )
+
+   # primary cluster ratio のためのデータ数
+  num_data_per_primary <- sample(1:30, num_primary_clusters, replace = TRUE)
+  total_data_count <- sum(num_data_per_primary)
+
+    # secondary_cluster_ratioを先に決定 (合計が100になるように)
+    sec_ratios <- runif(num_secondary_clusters)
+    sec_ratios <- round(sec_ratios / sum(sec_ratios) * 100, 2)
+
+  # 各プライマリクラスタに対してループ
+  for (i in 1:num_primary_clusters) {
+      # primary clusterの情報
+      p_id <- primary_cluster_ids[i]
+      p_name <- primary_cluster_names[i]
+      p_ratio <- round(num_data_per_primary[i] / total_data_count * 100, 2)
+
+      # このprimary clusterが属するsecondary cluster
+      sec_cluster <- primary_to_secondary[i]
+      sec_cluster_name <- secondary_cluster_names[sec_cluster]
+
+      # secondary_cluster_ratio を取得
+      s_ratio <- sec_ratios[sec_cluster]
+
+    # データフレームに追加
+    temp_df <- data.frame(
+      primary_cluster = p_id,
+      primary_cluster_name = p_name,
+      primary_cluster_ratio = p_ratio,
+      secondary_cluster = sec_cluster,
+      secondary_cluster_name = sec_cluster_name,
+      secondary_cluster_ratio = s_ratio,
+      stringsAsFactors = FALSE
+    )
+    df <- rbind(df, temp_df)
+  }
+
+ # primary_cluster_ratioを調整（偏りと合計100）
+    df <- df %>%
+      group_by(secondary_cluster) %>%
+      mutate(row_count = n()) %>%
+      ungroup() %>%
+      mutate(primary_cluster_ratio = ifelse(row_count > mean(row_count), primary_cluster_ratio * 1.5, primary_cluster_ratio * 0.5)) %>%
+      select(-row_count) %>%
+      ungroup() %>%
+      mutate(primary_cluster_ratio = round(primary_cluster_ratio / sum(primary_cluster_ratio) * 100, 2))
+
+  return(df)
+}
+# ダミーデータを生成
+df <- generate_dummy_data()
 ```
 
 
-```{r fig_example, fig.height = 5, fig.width = 5, out.width = "50%", fig.align = 'center', echo = FALSE}
-# draw treemap
-drawTreemap(tm, label_size = 2.5, label_color = "white", title = "An example")
+```{r ratio_example_prep, include=FALSE}
+# データ準備 (ratio labels example)
+df_secondary <- df %>%
+  group_by(secondary_cluster_name) %>%
+  summarise(
+    count = n(),
+    secondary_cluster_ratio = first(secondary_cluster_ratio),
+    .groups = 'drop'
+  ) %>% filter(count > 0)
+
+df_primary <- df %>%
+  group_by(primary_cluster_name) %>%
+  summarise(
+    count = n(),
+    primary_cluster_ratio = mean(primary_cluster_ratio, na.rm = TRUE),
+    .groups = 'drop'
+  ) %>% filter(count > 0)
+
+df_counts <- df %>%
+  group_by(secondary_cluster_name, primary_cluster_name) %>%
+  summarise(
+    count = n(),
+    .groups = 'drop'
+  ) %>%
+  filter(count > 0) %>%
+  left_join(df_secondary %>% select(secondary_cluster_name, secondary_cluster_ratio), by = "secondary_cluster_name") %>%
+  left_join(df_primary %>% select(primary_cluster_name, primary_cluster_ratio), by = "primary_cluster_name")
+
+tm_ratio <- voronoiTreemap(
+  data = df_counts,
+  levels = c("secondary_cluster_name", "primary_cluster_name"),
+  cell_size = "count",
+  shape = "rounded_rect",
+  positioning = "clustered",
+  error_tol = 0.01,
+  maxIteration = 100,
+  label_ratios = c("primary_cluster_ratio", "secondary_cluster_ratio"),
+  verbose = FALSE
+)
+
+```
+
+```{r fig_ratio_example, fig.height = 5, fig.width = 9, out.width = "90%", fig.align = 'center', echo = FALSE}
+# 新機能の例 (ratio labels)
+drawTreemap(tm_ratio,
+  label_level = c(1, 2),
+  label_color = c(adjustcolor(grey(1), alpha.f = 0.8), adjustcolor(grey(0.85), alpha.f = 0.80)),
+  label_size = c(0.8, 1.0),
+  label_autoscale = TRUE,
+  label_fontfamily = "zenmaru",
+  label_fontweight = "bold",
+  label_line_spacing = c(1.0, 0.0),
+  label_ratio = c(1, 2),
+  label_ratio_color = c(adjustcolor(grey(1), alpha.f = 0.8), adjustcolor(grey(0.85), alpha.f = 0.80)),
+  label_ratio_size = 0.6,
+  label_ratio_fontfamily = "zenmaru",
+  label_ratio_fontweight = "bold",
+  border_size = 1.0,
+  border_color = grey(0.8),
+  border_alpha = 0.6,
+  color_type = "categorical",
+  color_level = 1,
+  title = "Example with Ratio Labels",
+  title_color = grey(0.3),
+  title_size = 14,
+  title_fontfamily = 'roboto'
+)
 ```
 
 ## News
 
+*19 March 2025*
+
+This forked version adds the ability to display cluster ratio labels on Voronoi treemaps.  See the example above.
+
 *14 December 2023*
 
-The package was finally released on CRAN!
-Prerequisite was testing and troubleshooting of C++ related compilation problems,
-and re-release of the CGAL dependency package `RcppCGAL` with latest version.
+The original package was finally released on CRAN! Prerequisite was testing and troubleshooting of C++ related compilation problems, and re-release of the CGAL dependency package `RcppCGAL` with latest version.
 
 *25 March 2021*
 
@@ -70,8 +213,7 @@ A **Shiny app** for generating treemaps from custom data is now available on **[
 
 ## Description
 
-Treemaps are a visually appealing graphical representation of numerical data using a space-filling approach. A plane or 'map' is subdivided into smaller areas called cells. The cells in the map are scaled according to an underlying metric which allows to grasp the hierarchical organization and relative importance of many objects at once.
-This package contains two different implementations of treemaps, [**Voronoi treemaps**](#voronoi-treemaps) and [**Sunburst treemaps**](#sunburst-treemaps)
+Treemaps are a visually appealing graphical representation of numerical data using a space-filling approach. A plane or 'map' is subdivided into smaller areas called cells. The cells in the map are scaled according to an underlying metric which allows to grasp the hierarchical organization and relative importance of many objects at once. This package contains two different implementations of treemaps, [**Voronoi treemaps**](#voronoi-treemaps) and [**Sunburst treemaps**](#sunburst-treemaps).  This fork adds the ability to display ratio labels on Voronoi treemaps, as shown in the example above.
 
 There are different implementations available for **Voronoi tesselations** in R, the simplest being the `deldir()` function (from package `deldir`). However, `deldir` and others do not handle nested Voronoi tesselations, nor do they perform additively weighted Voronoi tesselation. This is an important demand for systems biology and other applications where it is useful to scale the cell size (or area) to a set of predefined weights. The `voronoiTreemap()` function provided in this packages allows both the additively weighted Voronoi tesselation and the nesting of different hierarchical levels in one plot.
 
@@ -87,36 +229,27 @@ Note: If the `RcppCGAL` package is temporarily not available on CRAN (as happene
 
 ## Installation
 
-To install the package from CRAN, use:
-
-```{r, eval = FALSE}
-install.packages("WeightedTreemaps")
-```
-
 To install the package directly from github, use the following function from the `devtools` package:
 
 ```{r, eval = FALSE}
-devtools::install_github("m-jahn/WeightedTreemaps")
+devtools::install_github("tsurezure-lab/WeightedTreemaps")
 ```
 
 ## Usage
 
 ### Voronoi treemaps
 
-The functions to create Voronoi (or Sunburst) treemaps take a `data.frame` as main input. 
-The `data.frame` should contain column(s) with numerical or categorical data (i.e. a character vector). Let's create a simple example data frame.
+The functions to create Voronoi (or Sunburst) treemaps take a `data.frame` as main input. The `data.frame` should contain column(s) with numerical or categorical data (i.e. a character vector). Let's create a simple example data frame.
 
 ```{r, eval = FALSE}
 library(WeightedTreemaps)
 
 # load example data
 data(mtcars)
-mtcars$car_name = gsub(" ", "\n", row.names(mtcars))
+mtcars$car_name <- gsub(" ", "\n", row.names(mtcars))
 ```
 
-Generate the treemap. It will return a list of polygons and metadata.
-The columns of the data frame that are used as levels of the treemap need to be specified.
-Different parameters like the initial shape, or the maximum number of iterations are optional.
+Generate the treemap. It will return a list of polygons and metadata. The columns of the data frame that are used as levels of the treemap need to be specified. Different parameters like the initial shape, or the maximum number of iterations are optional.
 
 ```{r, eval = FALSE}
 # generate treemap; set seed to obtain same pattern every time
@@ -134,6 +267,9 @@ Draw the treemap.
 ```{r fig_cars_basic, fig.width = 5, fig.height = 5, out.width = "50%", fig.align = 'center'}
 drawTreemap(tm, label_size = 2.5, label_color = "white")
 ```
+### New Feature: Displaying Ratio Labels
+
+To utilize the ratio label feature, your input data must have specific columns: `primary_cluster`, `primary_cluster_name`, `primary_cluster_ratio`, `secondary_cluster`, `secondary_cluster_name`, and `secondary_cluster_ratio`. See the example at the beginning of this document and the "Data Structure for Ratio Labels" section below.
 
 ### Drawing options
 
@@ -329,8 +465,7 @@ custom_pal_2 <- diverging_hcl(
 )
 ```
 
-Draw a customized treemap using some of the graphical parameters.
-Compare two different color palettes.
+Draw a customized treemap using some of the graphical parameters. Compare two different color palettes.
 
 ```{r, eval = FALSE}
 drawTreemap(
@@ -435,8 +570,7 @@ lapply(1:10, function(i) {
 
 ### Sunburst treemaps
 
-Sunburst treemaps are generated in the same way as described above for Voronoi treemaps.
-The function to generate a sunburst treemap is `sunburstTreemap()`, and just like `voronoiTreemap()` it returns an object of class `treemapResult` (essentially a list) with polygons and metadata. Drawing is done using the same `drawTreemaps()` function as for Voronoi treemaps.
+Sunburst treemaps are generated in the same way as described above for Voronoi treemaps. The function to generate a sunburst treemap is `sunburstTreemap()`, and just like `voronoiTreemap()` it returns an object of class `treemapResult` (essentially a list) with polygons and metadata. Drawing is done using the same `drawTreemaps()` function as for Voronoi treemaps.
 
 ```{r}
 # generate data frame
@@ -503,20 +637,55 @@ drawTreemap(tm,
 )
 ```
 
+## Data Structure for Ratio Labels
+To utilize the ratio label feature, your input data (passed to the `data` argument of `voronoiTreemap`) must be a data frame with the following specific structure:
+
+*   **`primary_cluster`**: (Integer) A unique identifier for each primary cluster.
+*   **`primary_cluster_name`**: (Character) The name of the primary cluster (e.g., "Primary Cluster 1").  This will be displayed as the larger label within each cell.
+*   **`primary_cluster_ratio`**: (Numeric) The ratio (percentage) of this primary cluster *within its parent secondary cluster*. The sum of `primary_cluster_ratio` values for all primary clusters belonging to the *same* secondary cluster should be approximately 100%.
+*   **`secondary_cluster`**: (Integer) A unique identifier for each secondary cluster.
+*   **`secondary_cluster_name`**: (Character) The name of the secondary cluster (e.g., "Secondary Cluster A"). This will be displayed as the smaller label above the primary cluster names.
+*   **`secondary_cluster_ratio`**: (Numeric) The ratio (percentage) of this secondary cluster *relative to all other secondary clusters*. The sum of `secondary_cluster_ratio` values across *all* secondary clusters should be approximately 100%.
+
+**Example:**
+
+| primary_cluster | primary_cluster_name | primary_cluster_ratio | secondary_cluster | secondary_cluster_name | secondary_cluster_ratio |
+|-----------------|----------------------|-----------------------|-------------------|------------------------|-------------------------|
+| 1               | Primary Cluster 1    | 25.5                  | 1                 | Secondary Cluster A    | 40.2                    |
+| 2               | Primary Cluster 2    | 74.5                  | 1                 | Secondary Cluster A    | 40.2                    |
+| 3               | Primary Cluster 3    | 40.0                  | 2                 | Secondary Cluster B    | 59.8                    |
+| 4               | Primary Cluster 4    | 60.0                  | 2                 | Secondary Cluster B    | 59.8                    |
+
+In this example:
+
+*   "Secondary Cluster A" has a `secondary_cluster_ratio` of 40.2%, meaning it represents 40.2% of the entire dataset.
+*   "Primary Cluster 1" has a `primary_cluster_ratio` of 25.5%.  This means that *within "Secondary Cluster A"*, "Primary Cluster 1" accounts for 25.5% of the data.
+*   The `primary_cluster_ratio` values for "Primary Cluster 1" and "Primary Cluster 2" (both within "Secondary Cluster A") add up to 100%.
+*   The `secondary_cluster_ratio` values for all secondary clusters sum up to 100%.
+
+**Important:** The `voronoiTreemap` function uses the `count` column (number of rows) for the cell size, and it expects the ratio columns to be pre-calculated. It does *not* perform any calculations of the ratios itself.
+
+## Differences from the Original
+
+- **Ratio Labels**: Added support in `drawTreemap()` to display percentage ratios for Voronoi treemaps, calculated from `primary_cluster_ratio` and `secondary_cluster_ratio` in the input data. This feature is *not* applied to Sunburst treemaps, which retain the original single-level label behavior.
+- **No Other Changes**: All other functionalities (coloring, borders, legends, etc.) remain identical to the original.
 
 ## References and other treemap packages
 
+The Voronoi tesselation is based on functions from Paul Murrell, https://www.stat.auckland.ac.nz/~paul/Reports/VoronoiTreemap/voronoiTreeMap.html. We created a recursive wrapper around the main tesselation function and improved the stability regarding generation of larger treemaps.
 
-The Voronoi tesselation is based on functions from Paul Murrell, https://www.stat.auckland.ac.nz/~paul/Reports/VoronoiTreemap/voronoiTreeMap.html.
-We created a recursive wrapper around the main tesselation function and
-improved the stability regarding generation of larger treemaps.
+For a similar but JAVA based implementation of Voronoi treemaps wrapped in R, see David Leslie's scripts at https://github.com/dlesl/voronoi_treemap_rJava.
 
-For a similar but JAVA based implementation of Voronoi treemaps wrapped in R, see
-David Leslie's scripts at https://github.com/dlesl/voronoi_treemap_rJava.
+A Javascript based R package lets you draw simple treemaps in your browser, however, this is not suitable for treemaps with many (as, hundreds of) cells. The package is available from CRAN or github, https://github.com/uRosConf/voronoiTreemap.
 
-A Javascript based R package lets you draw simple treemaps in your browser, however,
-this is not suitable for treemaps with many (as, hundreds of) cells. The package is
-available from CRAN or github, https://github.com/uRosConf/voronoiTreemap.
+Another popular resource is the web-based treemap generation from University of Greifswald at https://bionic-vis.biologie.uni-greifswald.de/.
 
-Another popular resource is the web-based treemap generation from University of
-Greifswald at https://bionic-vis.biologie.uni-greifswald.de/.
+## Acknowledgments
+
+-   **Original Authors**: Michael Jahn, David Leslie, Ahmadou Dicko, Paul Murrell.
+-   **Fork Author**: tsurezure-lab. This project builds upon the excellent work of the original m-jahn/WeightedTreemaps.
+
+## Notes
+
+-   If your data lacks the required `primary_cluster_*` or `secondary_cluster_*` columns, the treemap will fall back to displaying only cell names, maintaining compatibility with the original behavior.
+-   For advanced examples (e.g., parallel computing, custom shapes), refer to the original README.

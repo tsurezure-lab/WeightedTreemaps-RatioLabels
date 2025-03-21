@@ -413,4 +413,3 @@ drawTreemap <- function(
   popViewport(3)
 
 }
-
